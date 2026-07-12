@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CACSMS Production Pipeline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">CA</div>
+        <div>
+          <h1>CACSMS</h1>
+          <p>MEDIA STUDIO</p>
+        </div>
+      </div>
+
+      <div id="studioMap" class="studio-map" aria-label="CACSMS Studio modules"></div>
+
+      <nav class="nav-section">
+        <p class="nav-heading">STUDIO</p>
+        <a href="#" class="nav-link"><span>⌂</span>Dashboard</a>
+        <a href="#" class="nav-link active"><span>⚙</span>Production Pipeline</a>
+        <a href="#" class="nav-link"><span>▣</span>Production Studio</a>
+        <a href="#" class="nav-link"><span>▤</span>Templates</a>
+        <a href="#" class="nav-link"><span>▱</span>Asset Library</a>
+      </nav>
+
+      <nav class="nav-section">
+        <p class="nav-heading">AI & AUTOMATION</p>
+        <a href="#" class="nav-link"><span>◉</span>AI Agents</a>
+        <a href="#" class="nav-link"><span>⌘</span>Automation Hub</a>
+        <a href="#" class="nav-link"><span>⌯</span>Workflows</a>
+        <a href="#" class="nav-link"><span>☷</span>Queue Monitor</a>
+      </nav>
+
+      <nav class="nav-section">
+        <p class="nav-heading">ANALYTICS & MANAGEMENT</p>
+        <a href="#" class="nav-link"><span>⌁</span>Analytics</a>
+        <a href="#" class="nav-link"><span>♙</span>Collaboration</a>
+        <a href="#" class="nav-link"><span>⌘</span>Integrations</a>
+        <a href="#" class="nav-link"><span>♢</span>Quality & Compliance</a>
+      </nav>
+
+      <nav class="nav-section">
+        <p class="nav-heading">ADMINISTRATION</p>
+        <a href="#" class="nav-link"><span>♙</span>Administration</a>
+        <a href="#" class="nav-link"><span>⚙</span>Settings</a>
+      </nav>
+
+      <div class="sidebar-user">
+        <div class="avatar">SA</div>
+        <div>
+          <strong>Sarah A.</strong>
+          <span>Administrator</span>
+        </div>
+        <button aria-label="Open user menu">⌄</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="production-header panel">
+        <section class="project-meta">
+          <div class="project-icon">🎬</div>
+          <div>
+            <div class="project-title-line">
+              <h2>AI: The Machine That Learned to Think</h2>
+              <span class="tag purple">Documentary</span>
+              <button class="icon-button">✎</button>
+            </div>
+            <p>16:9 &nbsp;•&nbsp; English &nbsp;•&nbsp; 15 min &nbsp;•&nbsp; Created 2 hours ago</p>
+          </div>
+        </section>
+
+        <section class="header-metric">
+          <span class="metric-label">Current Stage</span>
+          <strong><span class="step-badge">6</span> Video & Animation</strong>
+          <small>Rendering scene 18 of 96</small>
+        </section>
+
+        <section class="header-metric progress-metric">
+          <span class="metric-label">Overall Progress</span>
+          <div class="metric-progress-row">
+            <div class="progress-track"><div class="progress-fill purple-fill" style="width:42%"></div></div>
+            <strong>42%</strong>
+          </div>
+          <small>Estimated completion: 1h 18m</small>
+        </section>
+
+        <section class="header-metric compact"><span class="metric-label">Render Cost</span><strong>$2.83</strong><small>Budget: $15.00</small></section>
+        <section class="header-metric compact"><span class="metric-label">GPU Workers</span><strong>12 / 16</strong><small>Active</small></section>
+        <section class="header-metric compact"><span class="metric-label">Health</span><strong class="healthy">● Healthy</strong></section>
+
+        <div class="header-actions">
+          <button class="btn secondary">Ⅱ&nbsp; Pause</button>
+          <button class="btn primary">▶&nbsp; Preview</button>
+          <button class="icon-button">⋮</button>
+        </div>
+      </header>
+
+      <div class="workspace-grid">
+        <section class="pipeline panel">
+          <div class="section-header">
+            <h3>PRODUCTION PIPELINE</h3>
+            <button class="text-button">↗ Collapse All</button>
+          </div>
+
+          <div class="pipeline-list">
+            <article class="stage completed">
+              <div class="stage-marker">✓</div>
+              <div class="stage-icon green">⇩</div>
+              <div class="stage-copy"><strong>Input</strong><span>Production brief created</span></div>
+              <span class="status completed-status">Completed</span>
+              <time>00:00:15</time><button>⌄</button>
+            </article>
+
+            <article class="stage completed">
+              <div class="stage-marker">2</div><div class="stage-icon green">⌕</div>
+              <div class="stage-copy"><strong>Content Intelligence</strong><span>Research & analysis completed</span></div>
+              <span class="status completed-status">Completed</span><time>00:18:42</time><button>⌄</button>
+            </article>
+
+            <article class="stage completed">
+              <div class="stage-marker">3</div><div class="stage-icon green">▤</div>
+              <div class="stage-copy"><strong>Script & Structure</strong><span>Script generated and approved</span></div>
+              <span class="status completed-status">Completed</span><time>00:45:10</time><button>⌄</button>
+            </article>
+
+            <article class="stage completed">
+              <div class="stage-marker">4</div><div class="stage-icon green">▦</div>
+              <div class="stage-copy"><strong>Scene Planning</strong><span>96 scenes planned</span></div>
+              <span class="status completed-status">Completed</span><time>00:32:08</time><button>⌄</button>
+            </article>
+
+            <article class="stage review">
+              <div class="stage-marker">5</div><div class="stage-icon teal">▧</div>
+              <div class="stage-copy"><strong>Visual Production</strong><span>Images generated</span></div>
+              <span class="status review-status">In Review</span>
+              <div class="stage-progress"><strong>89%</strong><div class="progress-track"><div class="progress-fill blue-fill" style="width:89%"></div></div></div>
+              <time>01:12:33</time><button>⌄</button>
+            </article>
+
+            <article class="stage current expanded">
+              <div class="stage-topline">
+                <div class="stage-marker purple-marker">6</div><div class="stage-icon purple-bg">🎬</div>
+                <div class="stage-copy"><strong>Video & Animation</strong><span>Rendering scene 18 of 96</span></div>
+                <span class="status in-progress-status">In Progress</span>
+                <div class="stage-progress"><strong>42%</strong><div class="progress-track"><div class="progress-fill purple-fill" style="width:42%"></div></div></div>
+                <time>02:18:56</time><button>⌃</button>
+              </div>
+
+              <div class="stage-details-grid">
+                <div class="detail-card">
+                  <h4>STAGE DETAILS</h4>
+                  <ul class="task-list">
+                    <li><span class="ok">✓</span>Image to Video <b class="ok-text">Completed</b></li>
+                    <li><span class="ok">✓</span>Camera Motion <b class="ok-text">Completed</b></li>
+                    <li><span class="spinner">◌</span>Effects & Animation <b class="progress-text">In Progress</b></li>
+                    <li><span>◷</span>Color Grading <b>Pending</b></li>
+                    <li><span>◷</span>Transitions <b>Pending</b></li>
+                    <li><span class="spinner">◌</span>Scene Rendering <b class="progress-text">In Progress</b></li>
+                  </ul>
+                </div>
+                <div class="detail-card centered">
+                  <h4>PROGRESS OVERVIEW</h4>
+                  <div class="donut" style="--value:42"><span><b>42%</b><small>40 / 96</small></span></div>
+                  <ul class="legend"><li><i class="green-dot"></i>Completed <b>38</b></li><li><i class="blue-dot"></i>In Progress <b>2</b></li><li><i class="gray-dot"></i>Pending <b>56</b></li><li><i class="red-dot"></i>Failed <b>0</b></li></ul>
+                </div>
+                <div class="detail-card render-card">
+                  <h4>CURRENTLY RENDERING</h4>
+                  <div class="render-preview"></div>
+                  <div><strong>Scene 18</strong><span>Robot Factory</span><small>Duration: 6.2s</small></div>
+                  <div class="render-progress"><div class="progress-track"><div class="progress-fill purple-fill" style="width:65%"></div></div><b>65%</b></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="stage pending"><div class="stage-marker hollow">7</div><div class="stage-icon pink">◉</div><div class="stage-copy"><strong>Voice, Music & Sound</strong><span>Awaiting video completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
+            <article class="stage pending"><div class="stage-marker hollow">8</div><div class="stage-icon blue">▣</div><div class="stage-copy"><strong>Timeline Assembly</strong><span>Awaiting audio completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
+            <article class="stage pending"><div class="stage-marker hollow">9</div><div class="stage-icon orange">♢</div><div class="stage-copy"><strong>Quality Assurance</strong><span>Awaiting timeline completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
+            <article class="stage pending"><div class="stage-marker hollow">10</div><div class="stage-icon orange">⇩</div><div class="stage-copy"><strong>Hybrid Export</strong><span>Awaiting QA completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
+            <article class="stage pending"><div class="stage-marker hollow">11</div><div class="stage-icon pink">⇧</div><div class="stage-copy"><strong>CapCut / Direct Publishing</strong><span>Awaiting export completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
+          </div>
+        </section>
+
+        <aside class="right-column">
+          <section class="panel card current-production">
+            <div class="section-header"><h3>CURRENT PRODUCTION</h3><button class="text-button">Edit</button></div>
+            <div class="current-production-body">
+              <div class="production-thumb"></div>
+              <div><h4>AI: The Machine That<br>Learned to Think</h4><p>Documentary • 15 min • 16:9<br>English • Created 2 hours ago</p><button class="btn secondary">⚙ Production Settings</button></div>
+            </div>
+          </section>
+
+          <section class="panel card timeline-card">
+            <div class="section-header"><h3>PRODUCTION TIMELINE</h3><button class="text-button">View Full Timeline</button></div>
+            <div class="mini-timeline">
+              <div class="mini-step done">✓<span>Input</span></div><div class="line done-line"></div>
+              <div class="mini-step done">✓<span>Research</span></div><div class="line done-line"></div>
+              <div class="mini-step done">▤<span>Script</span></div><div class="line done-line"></div>
+              <div class="mini-step done">▦<span>Scenes</span></div><div class="line"></div>
+              <div class="mini-step active">6<span>Video</span></div><div class="line"></div>
+              <div class="mini-step">◉<span>Audio</span></div><div class="line"></div>
+              <div class="mini-step">▣<span>Timeline</span></div><div class="line"></div>
+              <div class="mini-step">♢<span>QA</span></div><div class="line"></div>
+              <div class="mini-step">⇩<span>Export</span></div><div class="line"></div>
+              <div class="mini-step">⇧<span>Publish</span></div>
+            </div>
+          </section>
+
+          <section class="panel card agent-card">
+            <div class="section-header"><h3>AI AGENT ACTIVITY</h3><button class="text-button">View All Agents</button></div>
+            <div class="agent-list">
+              <div class="agent-row"><span class="agent-icon green">⌕</span><div><strong>Research Agent</strong><small>Completed research</small></div><b class="ok-text">Completed</b></div>
+              <div class="agent-row"><span class="agent-icon teal">▧</span><div><strong>Visual Director</strong><small>Generating scene visuals</small></div><b class="progress-text">In Progress ◌</b></div>
+              <div class="agent-row"><span class="agent-icon purple-bg">🎬</span><div><strong>Video Director</strong><small>Rendering scene 18 of 96</small></div><b class="progress-text">In Progress ◌</b></div>
+              <div class="agent-row"><span class="agent-icon pink">◉</span><div><strong>Narration Agent</strong><small>Waiting for video</small></div><b class="queued-text">Queued⌄</b></div>
+              <div class="agent-row"><span class="agent-icon orange">♫</span><div><strong>Sound Designer</strong><small>Preparing soundscape</small></div><b class="queued-text">Queued⌄</b></div>
+              <div class="agent-row"><span class="agent-icon blue">♢</span><div><strong>QA Agent</strong><small>Waiting for timeline</small></div><b class="queued-text">Queued⌄</b></div>
+            </div>
+          </section>
+
+          <div class="bottom-grid">
+            <section class="panel card queue-card">
+              <div class="section-header"><h3>RENDER QUEUE</h3><button class="text-button">View Full Queue</button></div>
+              <div class="queue-item"><div class="queue-thumb one"></div><div><strong>Scene 18</strong><span>Robot Factory</span><div class="progress-track"><div class="progress-fill purple-fill" style="width:65%"></div></div></div><b>65%</b></div>
+              <div class="queue-item"><div class="queue-thumb two"></div><div><strong>Scene 19</strong><span>Data Center</span><div class="progress-track"><div class="progress-fill purple-fill" style="width:35%"></div></div></div><b>35%</b></div>
+              <div class="queue-item"><div class="queue-thumb three"></div><div><strong>Scene 20</strong><span>City Night</span><div class="progress-track"><div class="progress-fill purple-fill" style="width:10%"></div></div></div><b>10%</b></div>
+              <div class="queue-item"><div class="queue-thumb four"></div><div><strong>Scene 21</strong><span>AI Brain Network</span></div><b>Waiting</b></div>
+            </section>
+
+            <section class="panel card outputs-card">
+              <div class="section-header"><h3>RECENT OUTPUTS</h3><button class="text-button">View All</button></div>
+              <div class="outputs-grid">
+                <div class="output-item"><div class="output-thumb o1"><span>▶</span></div><small>Scene 15 <b>6.1s</b></small></div>
+                <div class="output-item"><div class="output-thumb o2"><span>▶</span></div><small>Scene 16 <b>5.8s</b></small></div>
+                <div class="output-item"><div class="output-thumb o3"><span>▶</span></div><small>Scene 17 <b>6.0s</b></small></div>
+                <div class="output-item"><div class="output-thumb o4"><span>▶</span></div><small>Scene 18 <b>6.2s</b></small></div>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel card quick-actions">
+            <div class="section-header"><h3>QUICK ACTIONS</h3></div>
+            <div class="action-grid">
+              <button><span class="red">⟳</span><div><strong>Regenerate</strong><small>Failed Items</small></div></button>
+              <button><span class="purple">▶</span><div><strong>Preview</strong><small>Current Stage</small></div></button>
+              <button><span class="blue">▤</span><div><strong>View</strong><small>Script</small></div></button>
+              <button><span class="green-text">⇩</span><div><strong>Download</strong><small>Progress Report</small></div></button>
+              <button><span class="orange-text">⇧</span><div><strong>Export</strong><small>When Ready</small></div></button>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+  <script>
+    const cacsmsModules = [
+      ["STUDIO", [
+        ["HM", "Home", ["Executive Dashboard", "My Workspace", "Active Productions", "Recent Productions", "Production Workflow", "Production Pipeline", "Rendering Monitor", "Agent Activity", "Publishing Overview", "Calendar", "Notifications", "System Health"]],
+        ["PR", "Production Studio", ["Create Production", "All Productions", "Documentaries", "Stories", "Teaching Content", "Courses", "Explainers", "Tutorials", "Corporate Content", "Marketing Content", "Podcasts", "Social Content", "Custom Productions", "Production Pipeline", "Production Queue", "Drafts", "Completed Productions", "Archived Productions", "Production Calendar"]],
+        ["CI", "Content Intelligence", ["Topic Discovery", "Research Workspace", "Source Analysis", "Fact Verification", "Knowledge Extraction", "Citation Manager", "Trend Intelligence", "Audience Research", "Competitor Intelligence", "Content Gap Analysis", "Curriculum Research", "Source Library", "Knowledge Base", "Intelligence Reports"]],
+        ["WR", "Writing Studio", ["Writing Dashboard", "Script Generator", "Script Editor", "Narration Writer", "Story Writer", "Lesson Writer", "Course Writer", "Explainer Writer", "Tutorial Writer", "Dialogue Writer", "Interview Builder", "Podcast Writer", "Social Script Writer", "Title and Hook Generator", "Call-to-Action Builder", "Versions", "Reviews", "Approvals", "Script Export"]],
+        ["SL", "Story & Learning Design", ["Structure Dashboard", "Narrative Designer", "Character Designer", "World Builder", "Plot and Conflict Builder", "Episode Planner", "Learning Objective Builder", "Curriculum Designer", "Lesson Planner", "Teaching Sequence", "Knowledge Checks", "Quiz Builder", "Assessment Builder", "Examples and Case Studies", "Engagement Planner", "Age and Difficulty Adaptation", "Structure Approval"]],
+        ["SB", "Storyboard Studio", ["Storyboard Dashboard", "Auto Storyboard", "Scene Planner", "Shot Planner", "Teaching Visual Planner", "Demonstration Planner", "Camera Planner", "Motion Planner", "Transition Planner", "Text and Graphics Planner", "Storyboard Editor", "Scene Sequencer", "Preview", "Versions", "Approval"]],
+        ["VS", "Visual Studio", ["Visual Dashboard", "Image Generator", "Character Studio", "Character Consistency", "Environment Studio", "Object and Prop Studio", "Historical Reconstruction", "Illustration Studio", "Educational Diagram Studio", "Infographic Studio", "Chart and Data Visuals", "Map Studio", "Presentation Graphics", "Product Visuals", "Thumbnail Studio", "Brand Style Manager", "Prompt Library", "Batch Generation", "Visual QA", "Export"]],
+        ["VD", "Video Studio", ["Video Dashboard", "Scene Video Generator", "Image-to-Video", "Text-to-Video", "Character Animation", "Presenter Generator", "Whiteboard Animation", "Slide-to-Video", "Screen Recording Processor", "Demonstration Composer", "Cinematic Director", "Camera Motion", "Motion Graphics", "Visual Effects", "Colour Grading", "Scene Editor", "Preview", "Render Queue", "Video QA", "Export"]],
+        ["AU", "Audio Studio", ["Audio Dashboard", "Narration Generator", "Voice Library", "Voice Profiles", "Voice Cloning", "Pronunciation Manager", "Emotion and Delivery", "Dialogue Generator", "Multi-Speaker Audio", "Music Generator", "Music Library", "Sound Effects", "Ambient Sound", "Podcast Audio", "Audio Cleanup", "Audio Mixing", "Loudness Normalization", "Audio QA", "Export"]],
+        ["TL", "Timeline Studio", ["Master Timeline", "Scene Timeline", "Video Track", "Narration Track", "Dialogue Track", "Music Track", "Sound-Effects Track", "Subtitle Track", "Graphics Track", "Auto Assemble", "Synchronization", "Transition Manager", "Timeline Preview", "Timeline Versions", "Render Preview", "Timeline Export"]]
+      ]],
+      ["AI & AUTOMATION", [
+        ["AI", "AI Agents", ["Agent Dashboard", "Content Strategist", "Research Agent", "Fact Checker", "Scriptwriter", "Story Architect", "Curriculum Designer", "Teaching Agent", "Storyboard Director", "Visual Director", "Character Director", "Video Director", "Animation Director", "Narration Director", "Music Composer", "Sound Designer", "Timeline Editor", "Quality Reviewer", "Compliance Agent", "Export Agent", "Publishing Agent", "Agent Teams", "Agent Simulation Studio", "Workflows", "Prompts", "Tools", "Models", "Knowledge", "Memory", "Logs", "Costs", "Performance"]],
+        ["AH", "Automation Hub", ["Automation Dashboard", "Workflow Builder", "Production Workflows", "Content-Type Workflows", "Event Triggers", "Scheduled Productions", "Batch Productions", "Approval Rules", "Conditional Routing", "Background Jobs", "Worker Monitor", "Queue Monitor", "Retry Manager", "Failure Recovery", "Notifications", "Webhooks", "Automation Logs"]]
+      ]],
+      ["ANALYTICS & MANAGEMENT", [
+        ["QC", "Quality & Compliance", ["Quality Dashboard", "Content QA", "Script QA", "Story QA", "Teaching QA", "Fact Verification", "Visual QA", "Video QA", "Audio QA", "Subtitle QA", "Continuity Check", "Character Consistency", "Learning Objective Check", "Accessibility Check", "Copyright Review", "Brand Compliance", "Platform Compliance", "AI Safety Review", "Human Review", "Final Approval"]],
+        ["EX", "Export Center", ["Export Dashboard", "Final Video Export", "Editable Scene Package", "CapCut Package", "Audio Package", "Subtitle Package", "Storyboard Package", "Script Package", "Course Package", "Presentation Package", "Social Media Package", "Publishing Package", "Export History", "Download Center"]],
+        ["PB", "Publishing Center", ["Publishing Dashboard", "Channels", "YouTube", "Facebook", "TikTok", "Instagram", "LinkedIn", "X", "Website", "Learning Platforms", "Podcast Platforms", "Scheduler", "SEO and Metadata", "Thumbnail Optimizer", "Publishing Queue", "Publication History", "Comments and Engagement", "Publishing Reports"]],
+        ["AL", "Asset Library", ["All Assets", "Images", "Video Clips", "Audio", "Narrations", "Music", "Sound Effects", "Scripts", "Storyboards", "Characters", "Environments", "Diagrams", "Charts", "Maps", "Thumbnails", "Templates", "Brand Assets", "Licensed Assets", "Generated Assets", "Favourites", "Recycle Bin", "Archive"]],
+        ["TP", "Templates", ["Template Dashboard", "Documentary Templates", "Story Templates", "Teaching Templates", "Course Templates", "Explainer Templates", "Tutorial Templates", "Corporate Templates", "Marketing Templates", "Podcast Templates", "Social Media Templates", "Timeline Templates", "Visual Style Templates", "Audio Templates", "Export Templates", "Custom Templates"]],
+        ["AN", "Analytics", ["Executive Analytics", "Production Analytics", "Content Analytics", "Audience Analytics", "Learning Analytics", "Engagement Analytics", "Publishing Analytics", "Revenue Analytics", "Agent Performance", "Model Usage", "Rendering Analytics", "Cost Analytics", "Quality Analytics", "Export Analytics", "Custom Reports"]],
+        ["CO", "Collaboration", ["Teams", "Workspaces", "Assignments", "Tasks", "Comments", "Reviews", "Approvals", "Shared Assets", "Production Notes", "Mentions", "Notifications", "Activity Feed", "Audit History"]],
+        ["IN", "Integrations", ["Integration Dashboard", "AI Models", "Research Providers", "Image Providers", "Video Providers", "Voice Providers", "Music Providers", "Storage Providers", "CapCut Export", "YouTube", "Facebook", "TikTok", "Instagram", "LinkedIn", "X", "Learning Platforms", "Podcast Platforms", "Google Drive", "OneDrive", "Dropbox", "Webhooks", "API Management"]]
+      ]],
+      ["ADMINISTRATION", [
+        ["AD", "Administration", ["Organization", "Workspaces", "Users", "Roles", "Permissions", "Departments", "Content Policies", "AI Governance", "Usage Limits", "Model Access", "Cost Controls", "Billing", "Licences", "Security", "Audit Logs", "Data Retention", "Backup and Recovery", "System Operations"]],
+        ["ST", "Settings", ["General", "Branding", "Content Defaults", "Production Defaults", "AI Configuration", "Model Routing", "Research Settings", "Script Settings", "Visual Settings", "Video Settings", "Audio Settings", "Subtitle Settings", "Render Settings", "Export Settings", "Publishing Settings", "Notification Settings", "Storage", "API Keys", "Environment", "Advanced"]]
+      ]]
+    ];
+
+    const studioMap = document.getElementById("studioMap");
+    studioMap.innerHTML = cacsmsModules.map(([heading, modules]) => `
+      <nav class="studio-nav-section">
+        <p class="nav-heading">${heading}</p>
+        ${modules.map(([icon, label, children]) => `
+          <details class="studio-nav-group" ${label === "Home" ? "open" : ""}>
+            <summary class="studio-nav-link ${label === "Production Studio" ? "active" : ""}">
+              <span class="studio-icon">${icon}</span>
+              <span class="studio-label">${label}</span>
+              <b>${children.length}</b>
+            </summary>
+            <div class="studio-subnav">
+              ${children.map(child => `<a href="${hrefForChild(child)}" class="${child === "Production Pipeline" ? "sub-active" : ""}">${child}</a>`).join("")}
+            </div>
+          </details>
+        `).join("")}
+      </nav>
+    `).join("");
+
+    studioMap.querySelectorAll(".studio-nav-group").forEach(group => {
+      group.addEventListener("toggle", () => {
+        if (!group.open) return;
+        studioMap.querySelectorAll(".studio-nav-group").forEach(other => {
+          if (other !== group) other.open = false;
+        });
+      });
+    });
+
+    function hrefForChild(child) {
+      if (child === "Production Pipeline") return "/";
+      if (child === "Production Workflow") return "/production-workflow";
+      return "#";
+    }
+  </script>
+</body>
+</html>

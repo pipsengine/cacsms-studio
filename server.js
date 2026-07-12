@@ -1,8 +1,19 @@
 const http = require("node:http");
+const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
 
 const webDir = path.join(__dirname, "apps", "web");
+const pipelineDir = path.join(webDir, "public", "production-pipeline");
+const pipelineIndexPath = path.join(pipelineDir, "index.html");
+const pipelineStylesPath = path.join(pipelineDir, "styles.css");
+const workflowDir = path.join(webDir, "public", "production-workflow");
+const workflowIndexPath = path.join(workflowDir, "index.html");
+const workflowStylesPath = path.join(workflowDir, "styles.css");
+const moduleFlowDir = path.join(webDir, "public", "module-flow");
+const moduleFlowIndexPath = path.join(moduleFlowDir, "index.html");
+const moduleFlowStylesPath = path.join(moduleFlowDir, "styles.css");
+const sharedSidebarPath = path.join(webDir, "public", "shared-sidebar.js");
 const webRequire = createRequire(path.join(webDir, "package.json"));
 
 const hostname = process.env.HOSTNAME || "0.0.0.0";
@@ -58,11 +69,65 @@ function handleFallbackRequest(request, response) {
     return;
   }
 
+  if (url.pathname === "/styles.css" || url.pathname === "/production-pipeline/styles.css") {
+    sendFile(response, pipelineStylesPath, "text/css; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/production-workflow/styles.css") {
+    sendFile(response, workflowStylesPath, "text/css; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/module-flow/styles.css") {
+    sendFile(response, moduleFlowStylesPath, "text/css; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/shared-sidebar.js") {
+    sendFile(response, sharedSidebarPath, "text/javascript; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/" || url.pathname === "/production-pipeline" || url.pathname === "/production-pipeline/") {
+    sendFile(response, pipelineIndexPath, "text/html; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/production-workflow" || url.pathname === "/production-workflow/") {
+    sendFile(response, workflowIndexPath, "text/html; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/module-flow" || url.pathname === "/module-flow/") {
+    sendFile(response, moduleFlowIndexPath, "text/html; charset=utf-8");
+    return;
+  }
+
   response.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store"
   });
   response.end(renderFallbackPage());
+}
+
+function sendFile(response, filePath, contentType) {
+  fs.readFile(filePath, (error, content) => {
+    if (error) {
+      response.writeHead(404, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store"
+      });
+      response.end("CACSMS Studio asset not found.");
+      return;
+    }
+
+    response.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "no-store"
+    });
+    response.end(content);
+  });
 }
 
 function sendJson(response, payload) {
@@ -187,7 +252,7 @@ function renderFallbackPage() {
     .pill { border:1px solid var(--line); border-radius:999px; background:#fff; padding:6px 10px; font-size:12px; font-weight:650; }
     .stage { display:grid; grid-template-columns:34px 1fr; gap:12px; align-items:center; border:1px solid var(--line); border-radius:8px; padding:12px; background:#fff; }
     .num { display:grid; width:34px; height:34px; place-items:center; border-radius:8px; background:#e9f0f8; color:var(--blue); font-weight:850; }
-    .shell { grid-template-columns:360px 1fr; }
+    .shell { grid-template-columns:324px 1fr; }
     aside { background:linear-gradient(180deg,#ffffff 0%,#f8f7f3 48%,#f1f5f2 100%); padding:16px 14px; scrollbar-width:thin; }
     aside::-webkit-scrollbar { width:10px; }
     aside::-webkit-scrollbar-thumb { background:#cfd5d0; border:3px solid transparent; border-radius:999px; background-clip:content-box; }
@@ -217,23 +282,49 @@ function renderFallbackPage() {
     .children a:hover { background:#eef3f0; color:#17191c; }
     .children a.is-active { background:#e8f3ef; color:#064642; font-weight:850; }
     .sidebar-footer { margin-top:12px; border:1px solid #e4e0d6; border-radius:8px; background:#fff; padding:10px; color:var(--muted); font-size:11px; line-height:1.45; }
+    .sidebar-sticky { position:sticky; top:0; z-index:5; margin:-16px -14px 12px; padding:16px 14px 12px; background:linear-gradient(180deg,#ffffff 0%,rgba(255,255,255,.97) 76%,rgba(255,255,255,0) 100%); backdrop-filter:blur(12px); }
+    .sidebar-kicker { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 2px 10px; color:#7a7f86; font-size:10px; font-weight:850; text-transform:uppercase; }
+    .live-dot { display:inline-flex; align-items:center; gap:6px; color:#08645f; }
+    .live-dot::before { content:""; width:7px; height:7px; border-radius:999px; background:#1f9d68; box-shadow:0 0 0 4px rgba(31,157,104,.12); }
+    .nav-label { display:flex; align-items:center; justify-content:space-between; margin:14px 4px 7px; color:#8a9098; font-size:10px; font-weight:900; text-transform:uppercase; }
+    nav { gap:4px; }
+    details { border-color:transparent; background:transparent; border-radius:8px; }
+    details[open] { border-color:#e9e5dc; background:rgba(255,255,255,.8); box-shadow:0 10px 24px rgba(25,29,34,.055); }
+    summary { min-height:44px; border-radius:8px; grid-template-columns:30px minmax(0,1fr) auto 16px; padding:7px 8px; }
+    summary::before { display:none; }
+    summary::after { content:">"; display:grid; width:16px; height:16px; place-items:center; color:#98a0a8; font-size:11px; font-weight:900; transition:transform .16s ease; }
+    details[open] summary::after { transform:rotate(90deg); color:#08645f; }
+    details:not([open]) summary:hover { background:#f5f3ed; }
+    details[open] summary { color:#064642; }
+    .nav-icon { display:grid; width:30px; height:30px; place-items:center; border:1px solid #dfe7e3; border-radius:8px; background:#f8faf9; color:#52616a; font-size:11px; font-weight:900; letter-spacing:0; }
+    details[open] .nav-icon { border-color:#08645f; background:#08645f; color:#fff; box-shadow:0 8px 18px rgba(8,100,95,.22); }
+    .nav-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .children { margin-left:23px; border-left:1px solid #e3e7e3; padding:3px 8px 8px 14px; }
+    .children a { color:#616873; font-weight:650; }
+    .children a.is-active { box-shadow:inset 3px 0 0 #08645f; }
+    .nav-empty { display:none; margin:10px 4px; border:1px dashed #d7d2c8; border-radius:8px; color:#747a82; padding:12px; font-size:12px; line-height:1.45; }
     @media (max-width:900px){ .shell,.cols2,.cols3{grid-template-columns:1fr;} aside{position:relative;} h1{font-size:34px;} }
   </style>
 </head>
 <body>
   <div class="shell">
     <aside>
-      <div class="brand"><span class="mark">CA</span><span>CACSMS Autonomous<br/>Media Studio<small>Autonomous production console</small></span></div>
-      <div class="sidebar-tools">
-        <label class="search"><span class="search-icon" aria-hidden="true"></span><input type="search" placeholder="Search studio modules" aria-label="Search studio modules" /></label>
-        <div class="quick-actions"><a class="primary" href="#">+ Create</a><a href="/api/health">Health</a></div>
+      <div class="sidebar-sticky">
+        <div class="brand"><span class="mark">CA</span><span>CACSMS Autonomous<br/>Media Studio<small>Autonomous production console</small></span></div>
+        <div class="sidebar-kicker"><span>Studio Map</span><span class="live-dot">Live</span></div>
+        <div class="sidebar-tools">
+          <label class="search"><span class="search-icon" aria-hidden="true"></span><input id="sidebarSearch" type="search" placeholder="Search studio modules" aria-label="Search studio modules" /></label>
+          <div class="quick-actions"><a class="primary" href="#">+ Create</a><a href="/api/health">Health</a></div>
+        </div>
+        <div class="status-strip">
+          <div class="status-chip"><strong>20</strong><span>Types</span></div>
+          <div class="status-chip"><strong>22</strong><span>Modules</span></div>
+          <div class="status-chip"><strong>10</strong><span>Stages</span></div>
+        </div>
       </div>
-      <div class="status-strip">
-        <div class="status-chip"><strong>20</strong><span>Types</span></div>
-        <div class="status-chip"><strong>22</strong><span>Modules</span></div>
-        <div class="status-chip"><strong>10</strong><span>Stages</span></div>
-      </div>
+      <div class="nav-label"><span>Navigation</span><span>${modules.length} modules</span></div>
       <nav>${modules.map(renderModuleNav).join("")}</nav>
+      <div class="nav-empty" id="navEmpty">No matching studio module found.</div>
       <div class="sidebar-footer">IIS 3008 to Node 3018. CACSMS Studio fallback runtime.</div>
     </aside>
     <main>
@@ -255,6 +346,36 @@ function renderFallbackPage() {
       </section>
     </main>
   </div>
+  <script>
+    (function () {
+      var search = document.getElementById("sidebarSearch");
+      var modules = Array.prototype.slice.call(document.querySelectorAll(".nav-module"));
+      var empty = document.getElementById("navEmpty");
+
+      modules.forEach(function (module) {
+        module.addEventListener("toggle", function () {
+          if (!module.open || search.value.trim()) return;
+          modules.forEach(function (other) {
+            if (other !== module) other.open = false;
+          });
+        });
+      });
+
+      search.addEventListener("input", function () {
+        var query = search.value.trim().toLowerCase();
+        var visibleCount = 0;
+
+        modules.forEach(function (module) {
+          var matches = !query || module.dataset.label.indexOf(query) !== -1;
+          module.hidden = !matches;
+          module.open = query ? matches : module.querySelector(".is-active") !== null && module.querySelector("summary span").textContent === "Home";
+          if (matches) visibleCount += 1;
+        });
+
+        empty.style.display = visibleCount ? "none" : "block";
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
@@ -269,10 +390,41 @@ function escapeHtml(value) {
 }
 
 function renderModuleNav(module) {
-  return `<details open>
-    <summary><span>${escapeHtml(module.label)}</span><span class="count">${module.children.length}</span></summary>
+  const isDefaultOpen = module.label === "Home";
+
+  return `<details class="nav-module" data-label="${escapeHtml(`${module.label} ${module.children.join(" ")}`).toLowerCase()}" ${isDefaultOpen ? "open" : ""}>
+    <summary><span class="nav-icon">${escapeHtml(iconCode(module.label))}</span><span class="nav-title">${escapeHtml(module.label)}</span><span class="count">${module.children.length}</span></summary>
     <div class="children">${module.children
       .map((child) => `<a class="${child === "Create Production" || child === "Executive Dashboard" ? "is-active" : ""}" href="#">${escapeHtml(child)}</a>`)
       .join("")}</div>
   </details>`;
+}
+
+function iconCode(label) {
+  const codes = {
+    "Home": "HM",
+    "Production Studio": "PR",
+    "Content Intelligence": "CI",
+    "Writing Studio": "WR",
+    "Story & Learning Design": "SL",
+    "Storyboard Studio": "SB",
+    "Visual Studio": "VS",
+    "Video Studio": "VD",
+    "Audio Studio": "AU",
+    "Timeline Studio": "TL",
+    "Quality & Compliance": "QC",
+    "Export Center": "EX",
+    "Publishing Center": "PB",
+    "Asset Library": "AL",
+    "Templates": "TP",
+    "AI Agents": "AI",
+    "Automation Hub": "AH",
+    "Analytics": "AN",
+    "Collaboration": "CO",
+    "Integrations": "IN",
+    "Administration": "AD",
+    "Settings": "ST"
+  };
+
+  return codes[label] || label.slice(0, 2).toUpperCase();
 }
