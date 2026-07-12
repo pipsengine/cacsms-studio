@@ -1,0 +1,21 @@
+{
+  "name": "cacsms-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CACSMS Autonomous Media Studio domain-driven monorepo.",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  }
+}
