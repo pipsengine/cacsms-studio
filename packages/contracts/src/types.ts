@@ -63,3 +63,110 @@ export interface ContentTypeDefinition {
   publishingDestinations: string[];
   exportModes: string[];
 }
+
+export type OpportunityState =
+  | "discovered"
+  | "researching"
+  | "verified"
+  | "scored"
+  | "prioritized"
+  | "preplanned"
+  | "scheduled"
+  | "ready"
+  | "producing"
+  | "published"
+  | "learning"
+  | "archived";
+
+export type AutonomyMode = "assisted" | "recommended" | "supervised-autonomous" | "fully-autonomous";
+
+export interface OpportunitySignalSource {
+  id: string;
+  label: string;
+  cadence: string;
+  coverage: string[];
+}
+
+export interface OpportunityScoreModel {
+  label: string;
+  weight: number;
+  description: string;
+}
+
+export interface OpportunityPortfolioItem {
+  id: string;
+  title: string;
+  category: string;
+  state: OpportunityState;
+  overallScore: number;
+  emotionalProfile: string[];
+  productionFormats: ProductionFormat[];
+  recommendedChannels: string[];
+  publishWindow: string;
+  estimatedCostBand: string;
+  expectedReturn: string;
+}
+
+export interface OpportunityCampaign {
+  id: string;
+  title: string;
+  anchorOpportunity: string;
+  outputs: string[];
+}
+
+export type KnowledgeObjectType =
+  | "topic"
+  | "entity"
+  | "relationship"
+  | "source"
+  | "collection"
+  | "prediction"
+  | "reasoning-chain"
+  | "memory"
+  | "media-asset"
+  | "production-result";
+
+export type KnowledgeConfidence = "low" | "medium" | "high" | "verified";
+
+export interface KnowledgeUniverseMetric {
+  label: string;
+  value: string | number;
+  detail: string;
+}
+
+export interface KnowledgeDomain {
+  id: string;
+  label: string;
+  objects: number;
+  confidence: number;
+  freshness: number;
+}
+
+export interface KnowledgeGraphNode {
+  id: string;
+  label: string;
+  type: KnowledgeObjectType;
+  confidence: KnowledgeConfidence;
+}
+
+export interface KnowledgeGraphRelationship {
+  from: string;
+  to: string;
+  label: string;
+  confidence: KnowledgeConfidence;
+}
+
+export interface KnowledgeCollection {
+  id: string;
+  title: string;
+  summary: string;
+  includes: string[];
+}
+
+export interface KnowledgePrediction {
+  id: string;
+  title: string;
+  horizon: string;
+  confidence: number;
+  implication: string;
+}

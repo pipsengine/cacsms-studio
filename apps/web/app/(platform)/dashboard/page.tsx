@@ -1,5 +1,5 @@
-import { Dashboard } from "@/features/dashboard";
+import { LandingDashboard } from "@/features/landing-dashboard";
 
 export default function DashboardPage() {
-  return <Dashboard />;
+  return <LandingDashboard />;
 }

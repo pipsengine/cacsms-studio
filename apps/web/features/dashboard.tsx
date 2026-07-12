@@ -1,12 +1,19 @@
 import Link from "next/link";
-import { ArrowRight, Bot, Clapperboard, FileCheck2, Layers3, RadioTower, Wand2 } from "lucide-react";
-import { contentTypeDefinitions, navigationModules, productionPipeline } from "@cacsms/contracts";
+import { ArrowRight, Bot, Clapperboard, DatabaseZap, FileCheck2, Layers3, RadioTower, Telescope, Wand2 } from "lucide-react";
+import {
+  contentTypeDefinitions,
+  knowledgeUniverseMetrics,
+  navigationModules,
+  opportunityPortfolio,
+  productionPipeline
+} from "@cacsms/contracts";
 
 const metrics = [
   { label: "Production Types", value: contentTypeDefinitions.length, detail: "Configuration-driven definitions" },
   { label: "Studio Modules", value: navigationModules.length, detail: "Executive and operational workspaces" },
   { label: "Pipeline Stages", value: productionPipeline.length, detail: "Idea to publishing workflow" },
-  { label: "Export Modes", value: 4, detail: "Final, editable, CapCut, hybrid packages" }
+  { label: "Live Opportunities", value: opportunityPortfolio.length, detail: "Autonomous executive producer queue" },
+  { label: "Knowledge Objects", value: knowledgeUniverseMetrics[0]?.value ?? "0", detail: "World model intelligence layer" }
 ];
 
 export function Dashboard() {
@@ -57,6 +64,8 @@ export function Dashboard() {
           <div className="grid" style={{ marginTop: 14 }}>
             {[
               { href: "/productions/create", icon: Clapperboard, label: "Create Production" },
+              { href: "/opportunity-intelligence", icon: Telescope, label: "Opportunity Intelligence" },
+              { href: "/knowledge-universe", icon: DatabaseZap, label: "Knowledge Universe" },
               { href: "/intelligence", icon: Wand2, label: "Content Intelligence" },
               { href: "/agents", icon: Bot, label: "AI Agent Teams" },
               { href: "/timeline", icon: Layers3, label: "Timeline Assembly" },

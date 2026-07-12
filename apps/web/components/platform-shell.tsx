@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type React from "react";
 import { usePathname } from "next/navigation";
 import {
@@ -10,6 +10,9 @@ import {
   Boxes,
   CalendarClock,
   Clapperboard,
+  ChevronDown,
+  ChevronRight,
+  DatabaseZap,
   FileText,
   FolderOpen,
   Gauge,
@@ -21,10 +24,10 @@ import {
   PenLine,
   PlaySquare,
   Radio,
-  Search,
   Settings,
   ShieldCheck,
   Sparkles,
+  Telescope,
   Users,
   Wand2
 } from "lucide-react";
@@ -34,6 +37,8 @@ const icons = [
   LayoutDashboard,
   Clapperboard,
   Sparkles,
+  Telescope,
+  DatabaseZap,
   PenLine,
   Network,
   FileText,
@@ -55,148 +60,158 @@ const icons = [
   Settings
 ];
 
+const moduleGroups = [
+  {
+    label: "Studio",
+    slugs: [
+      "dashboard",
+      "productions",
+      "intelligence",
+      "opportunity-intelligence",
+      "knowledge-universe",
+      "writing",
+      "story-learning",
+      "storyboard",
+      "visuals",
+      "video",
+      "audio",
+      "timeline"
+    ]
+  },
+  {
+    label: "AI & Automation",
+    slugs: ["agents", "automation"]
+  },
+  {
+    label: "Analytics & Management",
+    slugs: ["quality", "exports", "publishing", "assets", "templates", "analytics", "collaboration", "integrations"]
+  },
+  {
+    label: "Administration",
+    slugs: ["administration", "settings"]
+  }
+];
+
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const activeModule = navigationModules.find((module) => pathname === `/${module.slug}` || pathname.startsWith(`/${module.slug}/`));
-  const [openModule, setOpenModule] = useState(activeModule?.slug ?? "dashboard");
-  const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleModules = useMemo(() => {
-    if (!normalizedQuery) return navigationModules;
+  const activeModule =
+    navigationModules.find((module) => pathname === `/${module.slug}` || pathname.startsWith(`/${module.slug}/`)) ??
+    navigationModules.find((module) => module.slug === "dashboard");
+  const [openModule, setOpenModule] = useState<string | null>(activeModule?.slug ?? "dashboard");
+  const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+  const groupedModules = useMemo(
+    () =>
+      moduleGroups.map((group) => ({
+        ...group,
+        modules: group.slugs
+          .map((slug) => navigationModules.find((module) => module.slug === slug))
+          .filter((module): module is (typeof navigationModules)[number] => Boolean(module))
+      })),
+    []
+  );
 
-    return navigationModules.filter((module) =>
-      `${module.label} ${module.children.map((child) => child.label).join(" ")}`.toLowerCase().includes(normalizedQuery)
-    );
-  }, [normalizedQuery]);
+  useEffect(() => {
+    setOpenModule(activeModule?.slug ?? "dashboard");
+  }, [activeModule?.slug]);
 
   return (
     <div className="shell">
       <aside className="sidebar" aria-label="Studio navigation">
-        <div className="sidebar-sticky">
-          <Link className="brand" href="/dashboard">
-            <span className="brand-mark">CA</span>
-            <span>
-              <span className="brand-title">CACSMS Autonomous Media Studio</span>
-              <span className="brand-subtitle">Autonomous production console</span>
+        <div className="brand-row">
+          <Link className="brand" href="/dashboard" aria-label="CACSMS dashboard">
+            <span className="brand-mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            <span className="brand-copy">
+              <strong>CACSMS</strong>
+              <small>Autonomous Media Studio</small>
             </span>
           </Link>
+          <button className="sidebar-toggle" type="button" aria-label="Sidebar menu">
+            <span />
+            <span />
+            <span />
+          </button>
+        </div>
 
-          <div className="sidebar-kicker">
-            <span>Studio Map</span>
-            <span className="live-dot">Live</span>
-          </div>
-
-          <div className="sidebar-tools">
-            <label className="sidebar-search">
-              <Search size={15} aria-hidden="true" />
-              <input
-                type="search"
-                placeholder="Search studio modules"
-                aria-label="Search studio modules"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <div className="sidebar-actions">
-              <Link className="sidebar-action primary" href="/productions/create">
-                Create
-              </Link>
-              <Link className="sidebar-action" href="/api/health">
-                Health
-              </Link>
+        <nav className="sidebar-scroll" aria-label="CACSMS modules">
+          {groupedModules.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <div className="nav-label">{group.label}</div>
+              {group.modules.map((module) => {
+                const sourceIndex = navigationModules.findIndex((item) => item.slug === module.slug);
+                const Icon = icons[sourceIndex] ?? Boxes;
+                const isActive = activeModule?.slug === module.slug;
+                const isOpen = openModule === module.slug;
+                return (
+                  <details
+                    className="pipeline-nav-group"
+                    key={module.slug}
+                    open={isOpen}
+                    onToggle={(event) => {
+                      setOpenModule(event.currentTarget.open ? module.slug : null);
+                    }}
+                  >
+                    <summary className={`nav-item${isActive ? " active" : ""}`}>
+                      <Icon size={16} aria-hidden="true" />
+                      <Link href={`/${module.slug}`}>{module.label}</Link>
+                      <span className="nav-badge">{formatCount(module.children.length, module.slug)}</span>
+                      {isOpen ? <ChevronDown className="nav-chevron" aria-hidden="true" /> : <ChevronRight className="nav-chevron" aria-hidden="true" />}
+                    </summary>
+                    <div className="pipeline-subnav">
+                      {module.children.map((child) => (
+                        <Link
+                          href={hrefForChild(module.slug, child.slug)}
+                          key={child.slug}
+                          aria-current={isActiveChild(module.slug, child.slug, pathname) ? "page" : undefined}
+                        >
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </details>
+                );
+              })}
             </div>
-          </div>
-
-          <div className="sidebar-stats">
-            <span>
-              <strong>20</strong>
-              Types
-            </span>
-            <span>
-              <strong>22</strong>
-              Modules
-            </span>
-            <span>
-              <strong>10</strong>
-              Stages
-            </span>
-          </div>
-        </div>
-
-        <div className="nav-label">
-          <span>Navigation</span>
-          <span>{navigationModules.length} modules</span>
-        </div>
-
-        <nav className="sidebar-nav">
-          {visibleModules.map((module) => {
-            const sourceIndex = navigationModules.findIndex((item) => item.slug === module.slug);
-            const Icon = icons[sourceIndex] ?? Boxes;
-            const isOpen = Boolean(normalizedQuery) || openModule === module.slug;
-            return (
-              <details
-                className="nav-section"
-                key={module.slug}
-                open={isOpen}
-                onToggle={(event) => {
-                  if (normalizedQuery) return;
-                  if (event.currentTarget.open) setOpenModule(module.slug);
-                }}
-              >
-                <summary className="nav-link">
-                  <span className="nav-icon">
-                    <Icon size={16} aria-hidden="true" />
-                  </span>
-                  <Link href={`/${module.slug}`}>{module.label}</Link>
-                  <span className="nav-count">{module.children.length}</span>
-                </summary>
-                <div className="nav-children">
-                  {module.children.map((child) => (
-                    <Link
-                      className="nav-child"
-                      href={module.slug === "productions" && child.slug === "create-production" ? "/productions/create" : `/${module.slug}/${child.slug}`}
-                      key={child.slug}
-                      aria-current={isActiveChild(module.slug, child.slug, pathname) ? "page" : undefined}
-                    >
-                      {child.label}
-                    </Link>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
+          ))}
         </nav>
-        {visibleModules.length === 0 ? <div className="sidebar-empty">No matching studio module found.</div> : null}
-        <div className="sidebar-footer">IIS 3008 to Node 3018. CACSMS Studio runtime.</div>
+
+        <div className="sidebar-footer">
+          <span className="avatar">SA</span>
+          <span className="profile-copy">
+            <strong>Sarah A.</strong>
+            <small>Administrator</small>
+          </span>
+          <Settings size={17} aria-hidden="true" />
+        </div>
       </aside>
 
       <div className="content">
-        <header className="topbar">
-          <div>
-            <h1>CACSMS Autonomous Media Studio</h1>
-            <div className="muted">Topic to script, scenes, visuals, audio, timeline, QA, export, and publishing.</div>
-          </div>
-          <div className="topbar-actions">
-            <Link className="button" href="/quality">
-              <ShieldCheck size={16} aria-hidden="true" />
-              QA
-            </Link>
-            <Link className="button primary" href="/productions/create">
-              <Clapperboard size={16} aria-hidden="true" />
-              Create
-            </Link>
-          </div>
-        </header>
+        {!dashboardRoute ? (
+          <header className="topbar">
+            <div>
+              <h1>CACSMS Autonomous Media Studio</h1>
+              <div className="muted">Topic to script, scenes, visuals, audio, timeline, QA, export, and publishing.</div>
+            </div>
+          </header>
+        ) : null}
         <main className="main">{children}</main>
       </div>
     </div>
   );
 }
 
-function isActiveChild(moduleSlug: string, childSlug: string, pathname: string) {
-  if (moduleSlug === "productions" && childSlug === "create-production") {
-    return pathname === "/productions/create";
-  }
+function hrefForChild(moduleSlug: string, childSlug: string) {
+  return moduleSlug === "productions" && childSlug === "create-production" ? "/productions/create" : `/${moduleSlug}/${childSlug}`;
+}
 
-  return pathname === `/${moduleSlug}/${childSlug}`;
+function isActiveChild(moduleSlug: string, childSlug: string, pathname: string) {
+  return pathname === hrefForChild(moduleSlug, childSlug);
+}
+
+function formatCount(count: number, slug: string) {
+  if (slug === "knowledge-universe") return "1.8M";
+  return String(count);
 }

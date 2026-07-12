@@ -7,6 +7,8 @@
       ["HM", "Home", ["Executive Dashboard", "My Workspace", "Active Productions", "Recent Productions", "Production Workflow", "Production Pipeline", "Rendering Monitor", "Agent Activity", "Publishing Overview", "Calendar", "Notifications", "System Health"]],
       ["PR", "Production Studio", ["Create Production", "All Productions", "Documentaries", "Stories", "Teaching Content", "Courses", "Explainers", "Tutorials", "Corporate Content", "Marketing Content", "Podcasts", "Social Content", "Custom Productions", "Production Pipeline", "Production Queue", "Drafts", "Completed Productions", "Archived Productions", "Production Calendar"]],
       ["CI", "Content Intelligence", ["Topic Discovery", "Research Workspace", "Source Analysis", "Fact Verification", "Knowledge Extraction", "Citation Manager", "Trend Intelligence", "Audience Research", "Competitor Intelligence", "Content Gap Analysis", "Curriculum Research", "Source Library", "Knowledge Base", "Intelligence Reports"]],
+      ["OI", "Opportunity Intelligence", ["Opportunity Dashboard", "Discovery Engine", "Global Intelligence", "Human Interest Intelligence", "Mystery Intelligence", "Curiosity Engine", "Emotional Opportunity Engine", "Life Explorer Engine", "Trend Intelligence", "Gap Detection", "Scoring Engine", "Opportunity Portfolio", "Evergreen Knowledge Bank", "Campaign Builder", "Multi-Format Planner", "Opportunity Scheduler", "Editorial Board", "Autonomy Modes", "Learning Engine", "Executive Recommendations"]],
+      ["KU", "Knowledge Universe", ["Executive Dashboard", "Knowledge Graph", "Knowledge Repository", "Knowledge Collections", "Subject Domains", "Topic Library", "Entity Explorer", "Relationship Explorer", "Timeline Explorer", "Geographic Intelligence", "People Intelligence", "Organization Intelligence", "Industry Intelligence", "Technology Intelligence", "Historical Intelligence", "Scientific Intelligence", "Educational Intelligence", "Economic Intelligence", "Government Intelligence", "Cultural Intelligence", "AI Memory", "Semantic Search", "Reasoning Engine", "World Model", "Prediction Engine", "Knowledge Analytics", "Knowledge Quality", "Knowledge Governance", "Knowledge Settings"]],
       ["WR", "Writing Studio", ["Writing Dashboard", "Script Generator", "Script Editor", "Narration Writer", "Story Writer", "Lesson Writer", "Course Writer", "Explainer Writer", "Tutorial Writer", "Dialogue Writer", "Interview Builder", "Podcast Writer", "Social Script Writer", "Title and Hook Generator", "Call-to-Action Builder", "Versions", "Reviews", "Approvals", "Script Export"]],
       ["SL", "Story & Learning Design", ["Structure Dashboard", "Narrative Designer", "Character Designer", "World Builder", "Plot and Conflict Builder", "Episode Planner", "Learning Objective Builder", "Curriculum Designer", "Lesson Planner", "Teaching Sequence", "Knowledge Checks", "Quiz Builder", "Assessment Builder", "Examples and Case Studies", "Engagement Planner", "Age and Difficulty Adaptation", "Structure Approval"]],
       ["SB", "Storyboard Studio", ["Storyboard Dashboard", "Auto Storyboard", "Scene Planner", "Shot Planner", "Teaching Visual Planner", "Demonstration Planner", "Camera Planner", "Motion Planner", "Transition Planner", "Text and Graphics Planner", "Storyboard Editor", "Scene Sequencer", "Preview", "Versions", "Approval"]],
@@ -35,26 +37,58 @@
     ]]
   ];
 
+  if (studioMap.dataset.variant === "pipeline") {
+    renderPipelineSidebar();
+    return;
+  }
+
+  const tools = document.createElement("div");
+  tools.className = "sidebar-tools";
+  tools.innerHTML = `
+    <label class="sidebar-search">
+      <span aria-hidden="true">Search</span>
+      <input type="search" aria-label="Search studio navigation" placeholder="Search modules and workspaces" />
+    </label>
+  `;
+  studioMap.before(tools);
+
+  const searchInput = tools.querySelector("input");
+
   studioMap.innerHTML = modules.map(([heading, groupModules]) => `
     <nav class="studio-nav-section">
       <p class="nav-heading">${heading}</p>
       ${groupModules.map(([icon, label, children]) => `
-        <details class="studio-nav-group" ${label === "Home" ? "open" : ""}>
+        <details class="studio-nav-group" data-label="${searchText(label, children)}" ${shouldOpen(label, children) ? "open" : ""}>
           <summary class="studio-nav-link ${activeParent(label)}">
             <span class="studio-icon">${icon}</span>
             <span class="studio-label">${label}</span>
             <b>${children.length}</b>
           </summary>
           <div class="studio-subnav">
-            ${children.map(child => `<a href="${hrefForChild(child)}" class="${activeChild(child)}">${child}</a>`).join("")}
+            ${children.map(child => `<a href="${hrefForChild(label, child)}" class="${activeChild(label, child)}">${child}</a>`).join("")}
           </div>
         </details>
       `).join("")}
     </nav>
   `).join("");
 
+  searchInput.addEventListener("input", () => {
+    const query = searchInput.value.trim().toLowerCase();
+    studioMap.querySelectorAll(".studio-nav-group").forEach(group => {
+      const matches = group.dataset.label.includes(query);
+      group.hidden = Boolean(query) && !matches;
+      if (query && matches) group.open = true;
+    });
+
+    studioMap.querySelectorAll(".studio-nav-section").forEach(section => {
+      const hasVisibleItems = Array.from(section.querySelectorAll(".studio-nav-group")).some(group => !group.hidden);
+      section.hidden = !hasVisibleItems;
+    });
+  });
+
   studioMap.querySelectorAll(".studio-nav-group").forEach(group => {
     group.addEventListener("toggle", () => {
+      if (searchInput.value.trim()) return;
       if (!group.open) return;
       studioMap.querySelectorAll(".studio-nav-group").forEach(other => {
         if (other !== group) other.open = false;
@@ -62,21 +96,173 @@
     });
   });
 
-  function hrefForChild(child) {
-    if (child === "Production Pipeline") return "/";
+  function hrefForChild(parent, child) {
+    if (parent === "Home" && child === "Executive Dashboard") return "/dashboard";
+    if (parent === "Production Pipeline" && child === "Production Life Cycle") return "/production-pipeline#life-cycle";
+    if (parent === "Production Pipeline" && child === "Current Production") return "/production-pipeline#current-production";
+    if (parent === "Production Pipeline" && child === "Pipeline Overview") return "/production-pipeline#pipeline-overview";
+    if (parent === "Production Pipeline" && child === "Schedule") return "/production-pipeline#schedule";
+    if (parent === "Production Pipeline" && child === "AI Insights") return "/production-pipeline#ai-insights";
+    if (child === "Production Pipeline") return "/production-pipeline";
     if (child === "Production Workflow") return "/production-workflow";
+    if (parent === "Opportunity Intelligence" && child === "Opportunity Dashboard") return "/opportunity-intelligence";
+    if (parent === "Opportunity Intelligence" && child === "Executive Recommendations") return "/opportunity-intelligence/executive-recommendations";
+    if (parent === "Opportunity Intelligence" && child === "Opportunity Portfolio") return "/opportunity-intelligence/opportunity-portfolio";
+    if (parent === "Opportunity Intelligence" && child === "Life Explorer Engine") return "/opportunity-intelligence/life-explorer-engine";
+    if (parent === "Knowledge Universe" && child === "Executive Dashboard") return "/knowledge-universe";
+    if (parent === "Knowledge Universe" && child === "Knowledge Graph") return "/knowledge-universe/knowledge-graph";
+    if (parent === "Knowledge Universe" && child === "Knowledge Repository") return "/knowledge-universe/knowledge-repository";
+    if (parent === "Knowledge Universe" && child === "World Model") return "/knowledge-universe/world-model";
+    if (parent === "Knowledge Universe" && child === "Prediction Engine") return "/knowledge-universe/prediction-engine";
+    if (parent === "Knowledge Universe" && child === "Knowledge Quality") return "/knowledge-universe/knowledge-quality";
+    if (parent === "Knowledge Universe" && child === "Knowledge Governance") return "/knowledge-universe/knowledge-governance";
     return "#";
   }
 
-  function activeChild(child) {
+  function activeChild(parent, child) {
     const path = window.location.pathname;
-    if ((path === "/" || path === "/production-pipeline") && child === "Production Pipeline") return "sub-active";
+    if (parent === "Production Pipeline" && (path === "/" || path.startsWith("/production-pipeline")) && child === "Production Life Cycle") return "sub-active";
+    if ((path === "/" || path.startsWith("/production-pipeline")) && child === "Production Pipeline") return "sub-active";
     if (path.startsWith("/production-workflow") && child === "Production Workflow") return "sub-active";
+    if (parent === "Opportunity Intelligence" && path === "/opportunity-intelligence" && child === "Opportunity Dashboard") return "sub-active";
+    if (parent === "Knowledge Universe" && path === "/knowledge-universe" && child === "Executive Dashboard") return "sub-active";
     return "";
   }
 
   function activeParent(label) {
-    if (label === "Home") return "active";
+    const path = window.location.pathname;
+    if ((path === "/" || path.startsWith("/production-pipeline") || path.startsWith("/production-workflow")) && label === "Home") return "active";
+    if (path.startsWith("/opportunity-intelligence") && label === "Opportunity Intelligence") return "active";
+    if (path.startsWith("/knowledge-universe") && label === "Knowledge Universe") return "active";
     return "";
+  }
+
+  function shouldOpen(label, children) {
+    return activeParent(label) === "active" || children.some(child => activeChild(label, child));
+  }
+
+  function searchText(label, children) {
+    return `${label} ${children.join(" ")}`.toLowerCase();
+  }
+
+  function renderPipelineSidebar() {
+    const iconNames = {
+      Home: "home",
+      "Production Studio": "layers-3",
+      "Content Intelligence": "search",
+      "Opportunity Intelligence": "target",
+      "Knowledge Universe": "globe-2",
+      "Production Pipeline": "workflow",
+      "Writing Studio": "file-text",
+      "Story & Learning Design": "book-open",
+      "Storyboard Studio": "grid-2x2",
+      "Visual Studio": "image",
+      "Video Studio": "video",
+      "Audio Studio": "mic-2",
+      "Timeline Studio": "film",
+      "AI Agents": "bot",
+      "Automation Hub": "cloud-cog",
+      "Quality & Compliance": "shield-check",
+      "Export Center": "upload-cloud",
+      "Publishing Center": "megaphone",
+      "Asset Library": "archive",
+      Templates: "layout-template",
+      Analytics: "line-chart",
+      Collaboration: "users",
+      Integrations: "network",
+      Administration: "settings-2",
+      Settings: "settings"
+    };
+
+    studioMap.innerHTML = modules.map(([heading, groupModules]) => {
+      const visibleModules =
+        heading === "STUDIO"
+          ? [
+              groupModules[0],
+              ["PP", "Production Pipeline", ["Production Life Cycle", "Current Production", "Pipeline Overview", "Schedule", "AI Insights"]],
+              ...groupModules.slice(1)
+            ]
+          : groupModules;
+
+      return `
+      <section class="nav-group">
+        <div class="nav-label">${heading}</div>
+        ${visibleModules.map(([fallbackIcon, label, children]) => `
+          <details class="pipeline-nav-group" ${shouldOpenPipelineModule(label, children) ? "open" : ""}>
+            <summary class="nav-item ${activePipelineParent(label)}" title="${label}">
+              <i data-lucide="${iconNames[label] ?? "boxes"}"></i>
+              <span>${label}</span>
+              <span class="nav-badge">${badgeForModule(label, children, fallbackIcon)}</span>
+              <i class="nav-chevron" data-lucide="chevron-right"></i>
+            </summary>
+            <div class="pipeline-subnav">
+              ${children.map(child => `<a href="${hrefForChild(label, child)}" class="${activeChild(label, child)}">${child}</a>`).join("")}
+            </div>
+          </details>
+        `).join("")}
+      </section>
+    `;
+    }).join("");
+
+    studioMap.querySelectorAll(".pipeline-nav-group").forEach(group => {
+      group.addEventListener("toggle", () => {
+        if (!group.open) return;
+        studioMap.querySelectorAll(".pipeline-nav-group").forEach(other => {
+          if (other !== group) other.open = false;
+        });
+      });
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function hrefForModule(label) {
+    if (label === "Home") return "/dashboard";
+    if (label === "Production Pipeline") return "/production-pipeline";
+    if (label === "Production Studio") return "/productions";
+    if (label === "Content Intelligence") return "/intelligence";
+    if (label === "Opportunity Intelligence") return "/opportunity-intelligence";
+    if (label === "Knowledge Universe") return "/knowledge-universe";
+    if (label === "Writing Studio") return "/writing";
+    if (label === "Story & Learning Design") return "/story-learning";
+    if (label === "Storyboard Studio") return "/storyboard";
+    if (label === "Visual Studio") return "/visuals";
+    if (label === "Video Studio") return "/video";
+    if (label === "Audio Studio") return "/audio";
+    if (label === "Timeline Studio") return "/timeline";
+    if (label === "AI Agents") return "/agents";
+    if (label === "Automation Hub") return "/automation";
+    if (label === "Quality & Compliance") return "/quality";
+    if (label === "Export Center") return "/exports";
+    if (label === "Publishing Center") return "/publishing";
+    if (label === "Asset Library") return "/assets";
+    if (label === "Templates") return "/templates";
+    if (label === "Analytics") return "/analytics";
+    if (label === "Collaboration") return "/collaboration";
+    if (label === "Integrations") return "/integrations";
+    if (label === "Administration") return "/administration";
+    if (label === "Settings") return "/settings";
+    return "#";
+  }
+
+  function activePipelineParent(label) {
+    const path = window.location.pathname;
+    if ((path === "/" || path.startsWith("/production-pipeline")) && label === "Production Pipeline") return "active";
+    if (path.startsWith("/production-workflow") && label === "Home") return "active";
+    if (path.startsWith("/opportunity-intelligence") && label === "Opportunity Intelligence") return "active";
+    if (path.startsWith("/knowledge-universe") && label === "Knowledge Universe") return "active";
+    if (path === "/dashboard" && label === "Home") return "active";
+    return "";
+  }
+
+  function badgeForModule(label, children, fallbackIcon) {
+    if (label === "Knowledge Universe") return "1.8M";
+    if (label === "Opportunity Intelligence") return "28";
+    if (label === "Home") return "12";
+    return children.length || fallbackIcon;
+  }
+
+  function shouldOpenPipelineModule(label, children) {
+    return activePipelineParent(label) === "active" || children.some(child => activeChild(label, child));
   }
 })();

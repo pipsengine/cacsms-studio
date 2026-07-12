@@ -7,6 +7,8 @@ const webDir = path.join(__dirname, "apps", "web");
 const pipelineDir = path.join(webDir, "public", "production-pipeline");
 const pipelineIndexPath = path.join(pipelineDir, "index.html");
 const pipelineStylesPath = path.join(pipelineDir, "styles.css");
+const landingDir = path.join(webDir, "public", "landing-dashboard");
+const landingIndexPath = path.join(landingDir, "index.html");
 const workflowDir = path.join(webDir, "public", "production-workflow");
 const workflowIndexPath = path.join(workflowDir, "index.html");
 const workflowStylesPath = path.join(workflowDir, "styles.css");
@@ -89,7 +91,12 @@ function handleFallbackRequest(request, response) {
     return;
   }
 
-  if (url.pathname === "/" || url.pathname === "/production-pipeline" || url.pathname === "/production-pipeline/") {
+  if (url.pathname === "/" || url.pathname === "/dashboard" || url.pathname === "/dashboard/") {
+    sendFile(response, landingIndexPath, "text/html; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/production-pipeline" || url.pathname === "/production-pipeline/") {
     sendFile(response, pipelineIndexPath, "text/html; charset=utf-8");
     return;
   }

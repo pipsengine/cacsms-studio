@@ -1,331 +1,79 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CACSMS Production Pipeline</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="/production-pipeline/styles.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">CA</div>
-        <div>
-          <h1>CACSMS</h1>
-          <p>MEDIA STUDIO</p>
-        </div>
-      </div>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand-row">
+      <div class="brand-mark"><span></span><span></span><span></span></div>
+      <div><strong>CACSMS</strong><small>Autonomous Media Studio</small></div>
+      <button class="icon-button sidebar-toggle" id="sidebarToggle"><i data-lucide="menu"></i></button>
+    </div>
 
-      <div id="studioMap" class="studio-map" aria-label="CACSMS Studio modules"></div>
+    <div class="sidebar-scroll">
+      <div id="studioMap" data-variant="pipeline" aria-label="CACSMS Studio modules"></div>
+    </div>
 
-      <nav class="nav-section">
-        <p class="nav-heading">STUDIO</p>
-        <a href="#" class="nav-link"><span>⌂</span>Dashboard</a>
-        <a href="#" class="nav-link active"><span>⚙</span>Production Pipeline</a>
-        <a href="#" class="nav-link"><span>▣</span>Production Studio</a>
-        <a href="#" class="nav-link"><span>▤</span>Templates</a>
-        <a href="#" class="nav-link"><span>▱</span>Asset Library</a>
-      </nav>
+    <div class="sidebar-footer"><div class="avatar">SA</div><div class="profile-copy"><strong>Sarah A.</strong><small>Administrator</small></div><i data-lucide="settings"></i></div>
+  </aside>
 
-      <nav class="nav-section">
-        <p class="nav-heading">AI & AUTOMATION</p>
-        <a href="#" class="nav-link"><span>◉</span>AI Agents</a>
-        <a href="#" class="nav-link"><span>⌘</span>Automation Hub</a>
-        <a href="#" class="nav-link"><span>⌯</span>Workflows</a>
-        <a href="#" class="nav-link"><span>☷</span>Queue Monitor</a>
-      </nav>
+  <main class="main-area">
+    <header class="topbar">
+      <div><div class="title-row"><h1>Production Pipeline</h1><span class="mode-pill">AUTONOMOUS MODE</span></div><p>End-to-end autonomous media production life cycle</p></div>
+      <div class="top-actions"><button class="project-select">Project: <strong>The Future of AI</strong><i data-lucide="chevron-down"></i></button><span class="status-pill"><span></span>In Progress</span><button class="icon-button bell"><i data-lucide="bell"></i><b>12</b></button><button class="assistant-btn"><i data-lucide="sparkles"></i>AI Assistant</button></div>
+    </header>
 
-      <nav class="nav-section">
-        <p class="nav-heading">ANALYTICS & MANAGEMENT</p>
-        <a href="#" class="nav-link"><span>⌁</span>Analytics</a>
-        <a href="#" class="nav-link"><span>♙</span>Collaboration</a>
-        <a href="#" class="nav-link"><span>⌘</span>Integrations</a>
-        <a href="#" class="nav-link"><span>♢</span>Quality & Compliance</a>
-      </nav>
+    <section class="summary-strip">
+      <div class="health-cell"><div class="health-ring"><span>92%</span></div><div><span>Pipeline Health</span><strong>Excellent</strong><small>All systems optimal</small></div></div>
+      <div class="metric-cell"><span>Opportunities</span><strong>342</strong><small class="positive">↑ 28 today</small></div>
+      <div class="metric-cell"><span>High Priority</span><strong>28</strong><small class="positive">↑ 6 today</small></div>
+      <div class="metric-cell"><span>In Production</span><strong>10</strong><small>3 rendering</small></div>
+      <div class="metric-cell"><span>Scheduled</span><strong>19</strong><small>$3,450 est. cost</small></div>
+      <div class="metric-cell"><span>Publishing Today</span><strong>4</strong><small>Across 3 channels</small></div>
+      <div class="metric-cell wide-metric"><span>Monthly Performance</span><div class="mini-grid"><div><small>ROI</small><strong>320%</strong></div><div><small>Eng. Rate</small><strong>18.7%</strong></div><div><small>Revenue</small><strong>$12,540</strong></div></div><small class="positive">vs last month ↑ 28%</small></div>
+    </section>
 
-      <nav class="nav-section">
-        <p class="nav-heading">ADMINISTRATION</p>
-        <a href="#" class="nav-link"><span>♙</span>Administration</a>
-        <a href="#" class="nav-link"><span>⚙</span>Settings</a>
-      </nav>
+    <section class="pipeline-card card">
+      <div class="card-head pipeline-head"><h3>Production Life Cycle</h3><div class="pipeline-controls"><span>Auto-Advance</span><button class="switch on" id="autoSwitch"><span></span></button><button class="text-action">Configure</button></div></div>
+      <div class="pipeline-scroll"><div class="pipeline-track" id="pipelineTrack"></div></div>
+    </section>
 
-      <div class="sidebar-user">
-        <div class="avatar">SA</div>
-        <div>
-          <strong>Sarah A.</strong>
-          <span>Administrator</span>
-        </div>
-        <button aria-label="Open user menu">⌄</button>
-      </div>
-    </aside>
+    <div class="content-grid top-grid">
+      <section class="card current-production"><div class="card-head"><h3>Current Production</h3></div><div class="production-top"><div class="poster poster-ai"><div class="poster-glow"></div><i data-lucide="brain"></i></div><div class="production-copy"><span class="eyebrow"><i></i> Active Stage: 6 of 13</span><h2>The AI Revolution in Healthcare</h2><p>Documentary · 18 min</p><div class="channel-row"><span>YouTube</span><span>Facebook</span><span>LinkedIn</span></div></div></div><div class="progress-row"><span>Progress</span><div class="progress"><b style="width:65%"></b></div><strong>65%</strong></div><div class="mini-stats"><div><span>Assets Total</span><strong>256</strong></div><div><span>Assets Completed</span><strong>166</strong></div><div><span>Est. Completion</span><strong>Today, 3:45 PM</strong></div><div><span>Budget Used</span><strong>$6.40 / $20.00</strong></div></div><div class="task-list"><h4>Current Tasks</h4><div><span class="task-dot"></span><span>Generating voiceover (Section 4)</span><strong>90%</strong></div><div><span class="task-dot t1"></span><span>Rendering scene 18/32</span><strong>60%</strong></div><div><span class="task-dot t2"></span><span>Creating motion graphics</span><strong>Completed</strong></div><div><span class="task-dot t3"></span><span>AI QA pre-check</span><strong>Pending</strong></div></div><button class="outline-primary">Open Production Workspace <i data-lucide="chevron-right"></i></button></section>
+      <section class="card pipeline-overview"><div class="card-head"><h3>Pipeline Overview</h3><button class="text-action">View Full Pipeline</button></div><div class="donut-wrap"><div class="donut" style="background:conic-gradient(#2457ff 0 52%,#6b3df2 52% 72%,#43c77a 72% 90%,#eef1f6 90% 100%)"><div><strong>90</strong><span>Total in Pipeline</span></div></div><ul><li><i class="c1"></i><span>28</span> Discover & Research</li><li><i class="c2"></i><span>18</span> Pre-Plan & Schedule</li><li><i class="c3"></i><span>10</span> In Production</li><li><i class="c4"></i><span>6</span> In Review</li><li><i class="c5"></i><span>3</span> Exporting</li><li><i class="c6"></i><span>4</span> Publishing Today</li><li><i class="c7"></i><span>8</span> Monitoring & Learning</li><li><i class="c8"></i><span>13</span> Completed</li></ul></div></section>
+      <section class="card"><div class="card-head"><h3>Upcoming Schedule</h3><button class="text-action">View Calendar</button></div><div class="schedule-list"><div><time>09:00 AM</time><span><strong>AI in Education: The Next Frontier</strong><small>Publishing to YouTube</small></span><b class="schedule-status publishing">Publishing</b></div><div><time>02:00 PM</time><span><strong>The Future of Work with AI</strong><small>Final review</small></span><b class="schedule-status">In Review</b></div><div><time>05:00 PM</time><span><strong>Robotics in Manufacturing</strong><small>Scheduled</small></span><b class="schedule-status">Scheduled</b></div><div><time>07:30 PM</time><span><strong>AI Tools Every Student Should Know</strong><small>Scheduled</small></span><b class="schedule-status">Scheduled</b></div></div></section>
+      <section class="card"><div class="card-head"><h3>AI Insights</h3><button class="text-action">View All Insights</button></div><div class="insight-list"><div><div class="insight-icon green"><i data-lucide="lightbulb"></i></div><span><strong>High opportunity detected</strong><small>Quantum Computing in Africa</small></span><b>98% Score</b></div><div><div class="insight-icon"><i data-lucide="clock-3"></i></div><span><strong>Best time to publish today</strong><small>7:00 PM – 9:00 PM</small></span><b>85%</b></div><div><div class="insight-icon green"><i data-lucide="trending-up"></i></div><span><strong>Audience interest rising</strong><small>AI in Healthcare</small></span><b>↑ 24%</b></div><div><div class="insight-icon orange"><i data-lucide="search"></i></div><span><strong>Content gap identified</strong><small>AI governance in Africa</small></span><b>High Impact</b></div></div></section>
+    </div>
 
-    <main class="main-content">
-      <header class="production-header panel">
-        <section class="project-meta">
-          <div class="project-icon">🎬</div>
-          <div>
-            <div class="project-title-line">
-              <h2>AI: The Machine That Learned to Think</h2>
-              <span class="tag purple">Documentary</span>
-              <button class="icon-button">✎</button>
-            </div>
-            <p>16:9 &nbsp;•&nbsp; English &nbsp;•&nbsp; 15 min &nbsp;•&nbsp; Created 2 hours ago</p>
-          </div>
-        </section>
-
-        <section class="header-metric">
-          <span class="metric-label">Current Stage</span>
-          <strong><span class="step-badge">6</span> Video & Animation</strong>
-          <small>Rendering scene 18 of 96</small>
-        </section>
-
-        <section class="header-metric progress-metric">
-          <span class="metric-label">Overall Progress</span>
-          <div class="metric-progress-row">
-            <div class="progress-track"><div class="progress-fill purple-fill" style="width:42%"></div></div>
-            <strong>42%</strong>
-          </div>
-          <small>Estimated completion: 1h 18m</small>
-        </section>
-
-        <section class="header-metric compact"><span class="metric-label">Render Cost</span><strong>$2.83</strong><small>Budget: $15.00</small></section>
-        <section class="header-metric compact"><span class="metric-label">GPU Workers</span><strong>12 / 16</strong><small>Active</small></section>
-        <section class="header-metric compact"><span class="metric-label">Health</span><strong class="healthy">● Healthy</strong></section>
-
-        <div class="header-actions">
-          <button class="btn secondary">Ⅱ&nbsp; Pause</button>
-          <button class="btn primary">▶&nbsp; Preview</button>
-          <button class="icon-button">⋮</button>
-        </div>
-      </header>
-
-      <div class="workspace-grid">
-        <section class="pipeline panel">
-          <div class="section-header">
-            <h3>PRODUCTION PIPELINE</h3>
-            <button class="text-button">↗ Collapse All</button>
-          </div>
-
-          <div class="pipeline-list">
-            <article class="stage completed">
-              <div class="stage-marker">✓</div>
-              <div class="stage-icon green">⇩</div>
-              <div class="stage-copy"><strong>Input</strong><span>Production brief created</span></div>
-              <span class="status completed-status">Completed</span>
-              <time>00:00:15</time><button>⌄</button>
-            </article>
-
-            <article class="stage completed">
-              <div class="stage-marker">2</div><div class="stage-icon green">⌕</div>
-              <div class="stage-copy"><strong>Content Intelligence</strong><span>Research & analysis completed</span></div>
-              <span class="status completed-status">Completed</span><time>00:18:42</time><button>⌄</button>
-            </article>
-
-            <article class="stage completed">
-              <div class="stage-marker">3</div><div class="stage-icon green">▤</div>
-              <div class="stage-copy"><strong>Script & Structure</strong><span>Script generated and approved</span></div>
-              <span class="status completed-status">Completed</span><time>00:45:10</time><button>⌄</button>
-            </article>
-
-            <article class="stage completed">
-              <div class="stage-marker">4</div><div class="stage-icon green">▦</div>
-              <div class="stage-copy"><strong>Scene Planning</strong><span>96 scenes planned</span></div>
-              <span class="status completed-status">Completed</span><time>00:32:08</time><button>⌄</button>
-            </article>
-
-            <article class="stage review">
-              <div class="stage-marker">5</div><div class="stage-icon teal">▧</div>
-              <div class="stage-copy"><strong>Visual Production</strong><span>Images generated</span></div>
-              <span class="status review-status">In Review</span>
-              <div class="stage-progress"><strong>89%</strong><div class="progress-track"><div class="progress-fill blue-fill" style="width:89%"></div></div></div>
-              <time>01:12:33</time><button>⌄</button>
-            </article>
-
-            <article class="stage current expanded">
-              <div class="stage-topline">
-                <div class="stage-marker purple-marker">6</div><div class="stage-icon purple-bg">🎬</div>
-                <div class="stage-copy"><strong>Video & Animation</strong><span>Rendering scene 18 of 96</span></div>
-                <span class="status in-progress-status">In Progress</span>
-                <div class="stage-progress"><strong>42%</strong><div class="progress-track"><div class="progress-fill purple-fill" style="width:42%"></div></div></div>
-                <time>02:18:56</time><button>⌃</button>
-              </div>
-
-              <div class="stage-details-grid">
-                <div class="detail-card">
-                  <h4>STAGE DETAILS</h4>
-                  <ul class="task-list">
-                    <li><span class="ok">✓</span>Image to Video <b class="ok-text">Completed</b></li>
-                    <li><span class="ok">✓</span>Camera Motion <b class="ok-text">Completed</b></li>
-                    <li><span class="spinner">◌</span>Effects & Animation <b class="progress-text">In Progress</b></li>
-                    <li><span>◷</span>Color Grading <b>Pending</b></li>
-                    <li><span>◷</span>Transitions <b>Pending</b></li>
-                    <li><span class="spinner">◌</span>Scene Rendering <b class="progress-text">In Progress</b></li>
-                  </ul>
-                </div>
-                <div class="detail-card centered">
-                  <h4>PROGRESS OVERVIEW</h4>
-                  <div class="donut" style="--value:42"><span><b>42%</b><small>40 / 96</small></span></div>
-                  <ul class="legend"><li><i class="green-dot"></i>Completed <b>38</b></li><li><i class="blue-dot"></i>In Progress <b>2</b></li><li><i class="gray-dot"></i>Pending <b>56</b></li><li><i class="red-dot"></i>Failed <b>0</b></li></ul>
-                </div>
-                <div class="detail-card render-card">
-                  <h4>CURRENTLY RENDERING</h4>
-                  <div class="render-preview"></div>
-                  <div><strong>Scene 18</strong><span>Robot Factory</span><small>Duration: 6.2s</small></div>
-                  <div class="render-progress"><div class="progress-track"><div class="progress-fill purple-fill" style="width:65%"></div></div><b>65%</b></div>
-                </div>
-              </div>
-            </article>
-
-            <article class="stage pending"><div class="stage-marker hollow">7</div><div class="stage-icon pink">◉</div><div class="stage-copy"><strong>Voice, Music & Sound</strong><span>Awaiting video completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
-            <article class="stage pending"><div class="stage-marker hollow">8</div><div class="stage-icon blue">▣</div><div class="stage-copy"><strong>Timeline Assembly</strong><span>Awaiting audio completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
-            <article class="stage pending"><div class="stage-marker hollow">9</div><div class="stage-icon orange">♢</div><div class="stage-copy"><strong>Quality Assurance</strong><span>Awaiting timeline completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
-            <article class="stage pending"><div class="stage-marker hollow">10</div><div class="stage-icon orange">⇩</div><div class="stage-copy"><strong>Hybrid Export</strong><span>Awaiting QA completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
-            <article class="stage pending"><div class="stage-marker hollow">11</div><div class="stage-icon pink">⇧</div><div class="stage-copy"><strong>CapCut / Direct Publishing</strong><span>Awaiting export completion</span></div><span class="status pending-status">Pending</span><time>—</time><button>⌄</button></article>
-          </div>
-        </section>
-
-        <aside class="right-column">
-          <section class="panel card current-production">
-            <div class="section-header"><h3>CURRENT PRODUCTION</h3><button class="text-button">Edit</button></div>
-            <div class="current-production-body">
-              <div class="production-thumb"></div>
-              <div><h4>AI: The Machine That<br>Learned to Think</h4><p>Documentary • 15 min • 16:9<br>English • Created 2 hours ago</p><button class="btn secondary">⚙ Production Settings</button></div>
-            </div>
-          </section>
-
-          <section class="panel card timeline-card">
-            <div class="section-header"><h3>PRODUCTION TIMELINE</h3><button class="text-button">View Full Timeline</button></div>
-            <div class="mini-timeline">
-              <div class="mini-step done">✓<span>Input</span></div><div class="line done-line"></div>
-              <div class="mini-step done">✓<span>Research</span></div><div class="line done-line"></div>
-              <div class="mini-step done">▤<span>Script</span></div><div class="line done-line"></div>
-              <div class="mini-step done">▦<span>Scenes</span></div><div class="line"></div>
-              <div class="mini-step active">6<span>Video</span></div><div class="line"></div>
-              <div class="mini-step">◉<span>Audio</span></div><div class="line"></div>
-              <div class="mini-step">▣<span>Timeline</span></div><div class="line"></div>
-              <div class="mini-step">♢<span>QA</span></div><div class="line"></div>
-              <div class="mini-step">⇩<span>Export</span></div><div class="line"></div>
-              <div class="mini-step">⇧<span>Publish</span></div>
-            </div>
-          </section>
-
-          <section class="panel card agent-card">
-            <div class="section-header"><h3>AI AGENT ACTIVITY</h3><button class="text-button">View All Agents</button></div>
-            <div class="agent-list">
-              <div class="agent-row"><span class="agent-icon green">⌕</span><div><strong>Research Agent</strong><small>Completed research</small></div><b class="ok-text">Completed</b></div>
-              <div class="agent-row"><span class="agent-icon teal">▧</span><div><strong>Visual Director</strong><small>Generating scene visuals</small></div><b class="progress-text">In Progress ◌</b></div>
-              <div class="agent-row"><span class="agent-icon purple-bg">🎬</span><div><strong>Video Director</strong><small>Rendering scene 18 of 96</small></div><b class="progress-text">In Progress ◌</b></div>
-              <div class="agent-row"><span class="agent-icon pink">◉</span><div><strong>Narration Agent</strong><small>Waiting for video</small></div><b class="queued-text">Queued⌄</b></div>
-              <div class="agent-row"><span class="agent-icon orange">♫</span><div><strong>Sound Designer</strong><small>Preparing soundscape</small></div><b class="queued-text">Queued⌄</b></div>
-              <div class="agent-row"><span class="agent-icon blue">♢</span><div><strong>QA Agent</strong><small>Waiting for timeline</small></div><b class="queued-text">Queued⌄</b></div>
-            </div>
-          </section>
-
-          <div class="bottom-grid">
-            <section class="panel card queue-card">
-              <div class="section-header"><h3>RENDER QUEUE</h3><button class="text-button">View Full Queue</button></div>
-              <div class="queue-item"><div class="queue-thumb one"></div><div><strong>Scene 18</strong><span>Robot Factory</span><div class="progress-track"><div class="progress-fill purple-fill" style="width:65%"></div></div></div><b>65%</b></div>
-              <div class="queue-item"><div class="queue-thumb two"></div><div><strong>Scene 19</strong><span>Data Center</span><div class="progress-track"><div class="progress-fill purple-fill" style="width:35%"></div></div></div><b>35%</b></div>
-              <div class="queue-item"><div class="queue-thumb three"></div><div><strong>Scene 20</strong><span>City Night</span><div class="progress-track"><div class="progress-fill purple-fill" style="width:10%"></div></div></div><b>10%</b></div>
-              <div class="queue-item"><div class="queue-thumb four"></div><div><strong>Scene 21</strong><span>AI Brain Network</span></div><b>Waiting</b></div>
-            </section>
-
-            <section class="panel card outputs-card">
-              <div class="section-header"><h3>RECENT OUTPUTS</h3><button class="text-button">View All</button></div>
-              <div class="outputs-grid">
-                <div class="output-item"><div class="output-thumb o1"><span>▶</span></div><small>Scene 15 <b>6.1s</b></small></div>
-                <div class="output-item"><div class="output-thumb o2"><span>▶</span></div><small>Scene 16 <b>5.8s</b></small></div>
-                <div class="output-item"><div class="output-thumb o3"><span>▶</span></div><small>Scene 17 <b>6.0s</b></small></div>
-                <div class="output-item"><div class="output-thumb o4"><span>▶</span></div><small>Scene 18 <b>6.2s</b></small></div>
-              </div>
-            </section>
-          </div>
-
-          <section class="panel card quick-actions">
-            <div class="section-header"><h3>QUICK ACTIONS</h3></div>
-            <div class="action-grid">
-              <button><span class="red">⟳</span><div><strong>Regenerate</strong><small>Failed Items</small></div></button>
-              <button><span class="purple">▶</span><div><strong>Preview</strong><small>Current Stage</small></div></button>
-              <button><span class="blue">▤</span><div><strong>View</strong><small>Script</small></div></button>
-              <button><span class="green-text">⇩</span><div><strong>Download</strong><small>Progress Report</small></div></button>
-              <button><span class="orange-text">⇧</span><div><strong>Export</strong><small>When Ready</small></div></button>
-            </div>
-          </section>
-        </aside>
-      </div>
-    </main>
-  </div>
-  <script>
-    const cacsmsModules = [
-      ["STUDIO", [
-        ["HM", "Home", ["Executive Dashboard", "My Workspace", "Active Productions", "Recent Productions", "Production Workflow", "Production Pipeline", "Rendering Monitor", "Agent Activity", "Publishing Overview", "Calendar", "Notifications", "System Health"]],
-        ["PR", "Production Studio", ["Create Production", "All Productions", "Documentaries", "Stories", "Teaching Content", "Courses", "Explainers", "Tutorials", "Corporate Content", "Marketing Content", "Podcasts", "Social Content", "Custom Productions", "Production Pipeline", "Production Queue", "Drafts", "Completed Productions", "Archived Productions", "Production Calendar"]],
-        ["CI", "Content Intelligence", ["Topic Discovery", "Research Workspace", "Source Analysis", "Fact Verification", "Knowledge Extraction", "Citation Manager", "Trend Intelligence", "Audience Research", "Competitor Intelligence", "Content Gap Analysis", "Curriculum Research", "Source Library", "Knowledge Base", "Intelligence Reports"]],
-        ["WR", "Writing Studio", ["Writing Dashboard", "Script Generator", "Script Editor", "Narration Writer", "Story Writer", "Lesson Writer", "Course Writer", "Explainer Writer", "Tutorial Writer", "Dialogue Writer", "Interview Builder", "Podcast Writer", "Social Script Writer", "Title and Hook Generator", "Call-to-Action Builder", "Versions", "Reviews", "Approvals", "Script Export"]],
-        ["SL", "Story & Learning Design", ["Structure Dashboard", "Narrative Designer", "Character Designer", "World Builder", "Plot and Conflict Builder", "Episode Planner", "Learning Objective Builder", "Curriculum Designer", "Lesson Planner", "Teaching Sequence", "Knowledge Checks", "Quiz Builder", "Assessment Builder", "Examples and Case Studies", "Engagement Planner", "Age and Difficulty Adaptation", "Structure Approval"]],
-        ["SB", "Storyboard Studio", ["Storyboard Dashboard", "Auto Storyboard", "Scene Planner", "Shot Planner", "Teaching Visual Planner", "Demonstration Planner", "Camera Planner", "Motion Planner", "Transition Planner", "Text and Graphics Planner", "Storyboard Editor", "Scene Sequencer", "Preview", "Versions", "Approval"]],
-        ["VS", "Visual Studio", ["Visual Dashboard", "Image Generator", "Character Studio", "Character Consistency", "Environment Studio", "Object and Prop Studio", "Historical Reconstruction", "Illustration Studio", "Educational Diagram Studio", "Infographic Studio", "Chart and Data Visuals", "Map Studio", "Presentation Graphics", "Product Visuals", "Thumbnail Studio", "Brand Style Manager", "Prompt Library", "Batch Generation", "Visual QA", "Export"]],
-        ["VD", "Video Studio", ["Video Dashboard", "Scene Video Generator", "Image-to-Video", "Text-to-Video", "Character Animation", "Presenter Generator", "Whiteboard Animation", "Slide-to-Video", "Screen Recording Processor", "Demonstration Composer", "Cinematic Director", "Camera Motion", "Motion Graphics", "Visual Effects", "Colour Grading", "Scene Editor", "Preview", "Render Queue", "Video QA", "Export"]],
-        ["AU", "Audio Studio", ["Audio Dashboard", "Narration Generator", "Voice Library", "Voice Profiles", "Voice Cloning", "Pronunciation Manager", "Emotion and Delivery", "Dialogue Generator", "Multi-Speaker Audio", "Music Generator", "Music Library", "Sound Effects", "Ambient Sound", "Podcast Audio", "Audio Cleanup", "Audio Mixing", "Loudness Normalization", "Audio QA", "Export"]],
-        ["TL", "Timeline Studio", ["Master Timeline", "Scene Timeline", "Video Track", "Narration Track", "Dialogue Track", "Music Track", "Sound-Effects Track", "Subtitle Track", "Graphics Track", "Auto Assemble", "Synchronization", "Transition Manager", "Timeline Preview", "Timeline Versions", "Render Preview", "Timeline Export"]]
-      ]],
-      ["AI & AUTOMATION", [
-        ["AI", "AI Agents", ["Agent Dashboard", "Content Strategist", "Research Agent", "Fact Checker", "Scriptwriter", "Story Architect", "Curriculum Designer", "Teaching Agent", "Storyboard Director", "Visual Director", "Character Director", "Video Director", "Animation Director", "Narration Director", "Music Composer", "Sound Designer", "Timeline Editor", "Quality Reviewer", "Compliance Agent", "Export Agent", "Publishing Agent", "Agent Teams", "Agent Simulation Studio", "Workflows", "Prompts", "Tools", "Models", "Knowledge", "Memory", "Logs", "Costs", "Performance"]],
-        ["AH", "Automation Hub", ["Automation Dashboard", "Workflow Builder", "Production Workflows", "Content-Type Workflows", "Event Triggers", "Scheduled Productions", "Batch Productions", "Approval Rules", "Conditional Routing", "Background Jobs", "Worker Monitor", "Queue Monitor", "Retry Manager", "Failure Recovery", "Notifications", "Webhooks", "Automation Logs"]]
-      ]],
-      ["ANALYTICS & MANAGEMENT", [
-        ["QC", "Quality & Compliance", ["Quality Dashboard", "Content QA", "Script QA", "Story QA", "Teaching QA", "Fact Verification", "Visual QA", "Video QA", "Audio QA", "Subtitle QA", "Continuity Check", "Character Consistency", "Learning Objective Check", "Accessibility Check", "Copyright Review", "Brand Compliance", "Platform Compliance", "AI Safety Review", "Human Review", "Final Approval"]],
-        ["EX", "Export Center", ["Export Dashboard", "Final Video Export", "Editable Scene Package", "CapCut Package", "Audio Package", "Subtitle Package", "Storyboard Package", "Script Package", "Course Package", "Presentation Package", "Social Media Package", "Publishing Package", "Export History", "Download Center"]],
-        ["PB", "Publishing Center", ["Publishing Dashboard", "Channels", "YouTube", "Facebook", "TikTok", "Instagram", "LinkedIn", "X", "Website", "Learning Platforms", "Podcast Platforms", "Scheduler", "SEO and Metadata", "Thumbnail Optimizer", "Publishing Queue", "Publication History", "Comments and Engagement", "Publishing Reports"]],
-        ["AL", "Asset Library", ["All Assets", "Images", "Video Clips", "Audio", "Narrations", "Music", "Sound Effects", "Scripts", "Storyboards", "Characters", "Environments", "Diagrams", "Charts", "Maps", "Thumbnails", "Templates", "Brand Assets", "Licensed Assets", "Generated Assets", "Favourites", "Recycle Bin", "Archive"]],
-        ["TP", "Templates", ["Template Dashboard", "Documentary Templates", "Story Templates", "Teaching Templates", "Course Templates", "Explainer Templates", "Tutorial Templates", "Corporate Templates", "Marketing Templates", "Podcast Templates", "Social Media Templates", "Timeline Templates", "Visual Style Templates", "Audio Templates", "Export Templates", "Custom Templates"]],
-        ["AN", "Analytics", ["Executive Analytics", "Production Analytics", "Content Analytics", "Audience Analytics", "Learning Analytics", "Engagement Analytics", "Publishing Analytics", "Revenue Analytics", "Agent Performance", "Model Usage", "Rendering Analytics", "Cost Analytics", "Quality Analytics", "Export Analytics", "Custom Reports"]],
-        ["CO", "Collaboration", ["Teams", "Workspaces", "Assignments", "Tasks", "Comments", "Reviews", "Approvals", "Shared Assets", "Production Notes", "Mentions", "Notifications", "Activity Feed", "Audit History"]],
-        ["IN", "Integrations", ["Integration Dashboard", "AI Models", "Research Providers", "Image Providers", "Video Providers", "Voice Providers", "Music Providers", "Storage Providers", "CapCut Export", "YouTube", "Facebook", "TikTok", "Instagram", "LinkedIn", "X", "Learning Platforms", "Podcast Platforms", "Google Drive", "OneDrive", "Dropbox", "Webhooks", "API Management"]]
-      ]],
-      ["ADMINISTRATION", [
-        ["AD", "Administration", ["Organization", "Workspaces", "Users", "Roles", "Permissions", "Departments", "Content Policies", "AI Governance", "Usage Limits", "Model Access", "Cost Controls", "Billing", "Licences", "Security", "Audit Logs", "Data Retention", "Backup and Recovery", "System Operations"]],
-        ["ST", "Settings", ["General", "Branding", "Content Defaults", "Production Defaults", "AI Configuration", "Model Routing", "Research Settings", "Script Settings", "Visual Settings", "Video Settings", "Audio Settings", "Subtitle Settings", "Render Settings", "Export Settings", "Publishing Settings", "Notification Settings", "Storage", "API Keys", "Environment", "Advanced"]]
-      ]]
-    ];
-
-    const studioMap = document.getElementById("studioMap");
-    studioMap.innerHTML = cacsmsModules.map(([heading, modules]) => `
-      <nav class="studio-nav-section">
-        <p class="nav-heading">${heading}</p>
-        ${modules.map(([icon, label, children]) => `
-          <details class="studio-nav-group" ${label === "Home" ? "open" : ""}>
-            <summary class="studio-nav-link ${label === "Production Studio" ? "active" : ""}">
-              <span class="studio-icon">${icon}</span>
-              <span class="studio-label">${label}</span>
-              <b>${children.length}</b>
-            </summary>
-            <div class="studio-subnav">
-              ${children.map(child => `<a href="${hrefForChild(child)}" class="${child === "Production Pipeline" ? "sub-active" : ""}">${child}</a>`).join("")}
-            </div>
-          </details>
-        `).join("")}
-      </nav>
-    `).join("");
-
-    studioMap.querySelectorAll(".studio-nav-group").forEach(group => {
-      group.addEventListener("toggle", () => {
-        if (!group.open) return;
-        studioMap.querySelectorAll(".studio-nav-group").forEach(other => {
-          if (other !== group) other.open = false;
-        });
-      });
-    });
-
-    function hrefForChild(child) {
-      if (child === "Production Pipeline") return "/";
-      if (child === "Production Workflow") return "/production-workflow";
-      return "#";
-    }
-  </script>
+    <div class="content-grid bottom-grid">
+      <section class="card"><div class="card-head"><h3>Top Opportunities</h3><button class="text-action">View All</button></div><div class="opportunity-list" id="opportunityList"></div></section>
+      <section class="card recent-outputs"><div class="card-head"><h3>Recent Outputs</h3><button class="text-action">View All</button></div><div class="output-grid" id="outputGrid"></div></section>
+      <section class="card"><div class="card-head"><h3>System Status</h3></div><div class="system-list"><div><span><i></i>AI Services</span><strong>Operational</strong></div><div><span><i></i>Render Workers</span><strong>12 / 12 Active</strong></div><div><span><i></i>Storage</span><strong>Healthy</strong></div><div><span><i></i>Database</span><strong>Healthy</strong></div><div><span><i></i>Integrations</span><strong>Connected</strong></div><div><span><i></i>API Gateway</span><strong>Operational</strong></div></div><div class="uptime"><span>System Uptime</span><strong>99.98%</strong></div></section>
+    </div>
+    <div class="floating-controls"><button class="run-btn stop" id="runBtn"><i data-lucide="x"></i><span>Stop Pipeline</span></button></div>
+  </main>
+</div>
+<script src="/shared-sidebar.js"></script>
+<script>
+const stages=[['Discover','AI scans the world for opportunities','target','green','342 New','done'],['Research','Deep research and verification','search','green','64 In Progress','done'],['Evaluate','Score, validate and prioritize','shield-check','green','28 High Priority','done'],['Pre-Plan','Define format, audience and channels','file-text','green','18 Ready','done'],['Schedule','Plan timeline and publish dates','calendar-days','blue','19 Scheduled','active'],['Produce','Create visual, audio and script assets','film','indigo','10 Active','current'],['Assemble','Build timeline and integrate','mic-2','violet','6 In Progress','pending'],['Quality','AI QA and human review','shield-check','violet','4 In Review','pending'],['Export','Render and prepare deliverables','upload-cloud','violet','3 Exporting','pending'],['Publish','Distribute automatically','rocket','pink','4 Today','pending'],['Monitor','Track performance in real time','bar-chart-3','orange','28 Monitoring','pending'],['Learn','AI learns continuously','brain','orange','AI Learning','pending'],['Repeat','New opportunities discovered','infinity','orange','Auto Loop','pending']];
+const track=document.getElementById('pipelineTrack');
+stages.forEach((s,i)=>{track.insertAdjacentHTML('beforeend',`<div class="stage stage-${s[3]} ${s[5]}"><div class="stage-index">${i+1}</div><div class="stage-icon-wrap"><i data-lucide="${s[2]}"></i></div><h4>${s[0]}</h4><p>${s[1]}</p><span class="stage-tag">${s[4]}</span></div>${i<stages.length-1?'<i class="stage-arrow" data-lucide="chevron-right"></i>':''}`)});
+const opportunities=[['Quantum Computing in Africa','Documentary · 16 min',98,'High','Research'],['AI and the Future of Jobs','Explainer · 8 min',94,'High','Pre-Plan'],['Robotics in African Agriculture','Documentary · 14 min',91,'High','Research'],['The Truth About Artificial General Intelligence','Explainer · 12 min',89,'Medium','Pre-Plan'],['How AI Is Changing African Startups','Story · 10 min',87,'High','Research']];
+document.getElementById('opportunityList').innerHTML=opportunities.map(o=>`<div><span class="score-ring">${o[2]}</span><span><strong>${o[0]}</strong><small>${o[1]}</small></span><b class="priority ${o[3].toLowerCase()}">${o[3]}</b><em>${o[4]}</em></div>`).join('');
+const outputs=[['AI in Healthcare: Saving Lives','18:24','city'],['The Rise of Humanoid Robots','17:45','robot'],['Understanding Machine Learning','09:16','brain'],['Cybersecurity in 2025','15:31','shield'],['Smart Factories of the Future','14:02','factory']];
+document.getElementById('outputGrid').innerHTML=outputs.map((o,i)=>`<div class="output-item"><div class="thumb ${o[2]}"><i data-lucide="play-circle"></i><span>${o[1]}</span></div><strong>${o[0]}</strong><small>Published</small><em>${[2.1,3.8,5.2,1.7,2.9][i]}K views</em></div>`).join('');
+let running=true;
+document.getElementById('runBtn').onclick=e=>{running=!running;e.currentTarget.className='run-btn '+(running?'stop':'start');e.currentTarget.innerHTML=`<i data-lucide="${running?'x':'play-circle'}"></i><span>${running?'Stop':'Start'} Pipeline</span>`;lucide.createIcons()};
+document.getElementById('autoSwitch').onclick=e=>e.currentTarget.classList.toggle('on');
+const sidebarToggle=document.getElementById('sidebarToggle');
+if(sidebarToggle) sidebarToggle.onclick=()=>document.getElementById('sidebar')?.classList.toggle('collapsed');
+lucide.createIcons();
+</script>
 </body>
 </html>
