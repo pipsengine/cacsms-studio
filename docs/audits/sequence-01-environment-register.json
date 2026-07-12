@@ -1,0 +1,74 @@
+[
+  {
+    "variable": "HOSTNAME",
+    "usedBy": "server.js",
+    "fileOrModule": "server.js",
+    "required": false,
+    "defaultValue": "0.0.0.0",
+    "secret": false,
+    "developmentUse": "Controls Node bind host when running server.js.",
+    "productionUse": "Controls internal Node bind host behind IIS.",
+    "validationStatus": "No explicit validation.",
+    "risk": "Low; default is permissive."
+  },
+  {
+    "variable": "PORT",
+    "usedBy": "server.js and IIS start scripts",
+    "fileOrModule": "server.js, package.json, infrastructure/deployment/iis/*.ps1",
+    "required": false,
+    "defaultValue": "3018 in server.js; 3008 in apps/web next start script",
+    "secret": false,
+    "developmentUse": "Can override the Node runtime port.",
+    "productionUse": "Expected internal Node port behind IIS reverse proxy.",
+    "validationStatus": "Converted with Number(port) unless named pipe.",
+    "risk": "Medium; two different port conventions exist between direct Next start and server.js."
+  },
+  {
+    "variable": "NODE_ENV",
+    "usedBy": "server.js and apps/api/src/main.ts",
+    "fileOrModule": "server.js, apps/api/src/main.ts, package.json",
+    "required": false,
+    "defaultValue": "Not set; server.js treats anything except production as dev",
+    "secret": false,
+    "developmentUse": "Enables Next dev mode in server.js when not production.",
+    "productionUse": "Set to production by start:iis-node.",
+    "validationStatus": "No explicit validation.",
+    "risk": "Low."
+  },
+  {
+    "variable": "CACSMS_PUBLIC_PORT",
+    "usedBy": "server.js, apps/web/app/api/health/route.ts, web.config, IIS scripts",
+    "fileOrModule": "server.js, apps/web/app/api/health/route.ts, web.config",
+    "required": false,
+    "defaultValue": "3008",
+    "secret": false,
+    "developmentUse": "Displayed in health payload.",
+    "productionUse": "Documents public IIS port in health/fallback responses.",
+    "validationStatus": "No explicit validation.",
+    "risk": "Low."
+  },
+  {
+    "variable": "CACSMS_INTERNAL_NODE_PORT",
+    "usedBy": "web.config only",
+    "fileOrModule": "web.config",
+    "required": false,
+    "defaultValue": "3018 in web.config",
+    "secret": false,
+    "developmentUse": "Not read by Node code.",
+    "productionUse": "Documents IIS app setting for internal port.",
+    "validationStatus": "Unused by inspected runtime.",
+    "risk": "Medium; duplicate with PORT and not consumed by server.js."
+  },
+  {
+    "variable": "CACSMS_APP_NAME",
+    "usedBy": "web.config only",
+    "fileOrModule": "web.config",
+    "required": false,
+    "defaultValue": "cacsms-studio",
+    "secret": false,
+    "developmentUse": "None found.",
+    "productionUse": "IIS app setting only.",
+    "validationStatus": "Unused by inspected runtime.",
+    "risk": "Low."
+  }
+]

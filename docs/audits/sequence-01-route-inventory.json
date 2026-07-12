@@ -1,0 +1,115 @@
+{
+  "frontendRoutes": [
+    {
+      "route": "/",
+      "pageFile": "apps/web/app/page.tsx",
+      "layout": "apps/web/app/layout.tsx with PlatformShell",
+      "purpose": "Redirects to /dashboard.",
+      "currentStatus": "Working; static route in build output.",
+      "usesMockData": false,
+      "usesRealApi": false,
+      "sidebarEntry": "Home",
+      "parentModule": "Home",
+      "childPage": null
+    },
+    {
+      "route": "/dashboard",
+      "pageFile": "apps/web/app/(platform)/dashboard/page.tsx",
+      "layout": "apps/web/app/layout.tsx with PlatformShell",
+      "purpose": "Landing dashboard / mission control.",
+      "currentStatus": "Working; static route in build output.",
+      "usesMockData": true,
+      "usesRealApi": false,
+      "sidebarEntry": "Home",
+      "parentModule": "Home",
+      "childPage": "Executive Dashboard"
+    },
+    {
+      "route": "/productions/create",
+      "pageFile": "apps/web/app/(platform)/productions/create/page.tsx",
+      "layout": "apps/web/app/layout.tsx with PlatformShell",
+      "purpose": "Production creation wizard.",
+      "currentStatus": "Working; static route in build output.",
+      "usesMockData": true,
+      "usesRealApi": false,
+      "sidebarEntry": "Production Studio > Create Production",
+      "parentModule": "Production Studio",
+      "childPage": "Create Production"
+    },
+    {
+      "route": "/[module]",
+      "pageFile": "apps/web/app/(platform)/[module]/page.tsx",
+      "layout": "apps/web/app/layout.tsx with PlatformShell",
+      "purpose": "Generated module workspace for registered navigation modules.",
+      "currentStatus": "Working dynamic SSR route in build output.",
+      "usesMockData": true,
+      "usesRealApi": false,
+      "sidebarEntry": "All registered module parents",
+      "parentModule": "Dynamic",
+      "childPage": null
+    },
+    {
+      "route": "/[module]/[workspace]",
+      "pageFile": "apps/web/app/(platform)/[module]/[workspace]/page.tsx",
+      "layout": "apps/web/app/layout.tsx with PlatformShell",
+      "purpose": "Generated child workspace for registered navigation module children.",
+      "currentStatus": "Working dynamic SSR route in build output.",
+      "usesMockData": true,
+      "usesRealApi": false,
+      "sidebarEntry": "All registered child items",
+      "parentModule": "Dynamic",
+      "childPage": "Dynamic"
+    },
+    {
+      "route": "/api/health",
+      "pageFile": "apps/web/app/api/health/route.ts",
+      "layout": "Next route handler",
+      "purpose": "Health payload with production type/module/pipeline counts.",
+      "currentStatus": "Working; dynamic API route in build output.",
+      "usesMockData": false,
+      "usesRealApi": true,
+      "sidebarEntry": "Not a sidebar page",
+      "parentModule": null,
+      "childPage": null
+    }
+  ],
+  "staticPublicRoutesServedByServerJsFallbackOnly": [
+    {
+      "route": "/production-pipeline",
+      "file": "apps/web/public/production-pipeline/index.html",
+      "status": "Served by server.js fallback only when Next is unavailable; otherwise Next dynamic /[module] would handle unless custom routing is added."
+    },
+    {
+      "route": "/production-workflow",
+      "file": "apps/web/public/production-workflow/index.html",
+      "status": "Served by server.js fallback only when Next is unavailable; otherwise Next dynamic /[module] would handle unless custom routing is added."
+    },
+    {
+      "route": "/module-flow",
+      "file": "apps/web/public/module-flow/index.html",
+      "status": "Served by server.js fallback only when Next is unavailable; otherwise Next dynamic /[module] would handle unless custom routing is added."
+    }
+  ],
+  "backendRoutes": [
+    {
+      "method": "GET",
+      "route": "/api/health",
+      "handler": "apps/web/app/api/health/route.ts",
+      "purpose": "Health status for the Next runtime.",
+      "validation": "None required.",
+      "databaseUse": "None.",
+      "errorHandling": "No explicit try/catch; returns static JSON.",
+      "currentStatus": "Working."
+    },
+    {
+      "method": "GET",
+      "route": "/api/health",
+      "handler": "server.js handleFallbackRequest",
+      "purpose": "Fallback health status if Next is unavailable.",
+      "validation": "None required.",
+      "databaseUse": "None.",
+      "errorHandling": "Static JSON response.",
+      "currentStatus": "Available only in fallback mode."
+    }
+  ]
+}

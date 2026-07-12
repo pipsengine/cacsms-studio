@@ -1,0 +1,83 @@
+[
+  {
+    "package": "turbo",
+    "version": "^2.5.4",
+    "locations": ["package.json"],
+    "classification": ["Core", "Development"],
+    "usedBy": ["root dev", "root build", "root typecheck", "root test"],
+    "status": "Keep",
+    "risk": "Low"
+  },
+  {
+    "package": "typescript",
+    "version": "^5.8.3",
+    "locations": ["package.json", "apps/web/package.json", "apps/api/package.json", "packages/contracts/package.json"],
+    "classification": ["Core", "Development"],
+    "usedBy": ["all implemented TypeScript packages"],
+    "status": "Keep; duplicated intentionally per workspace package.",
+    "risk": "Low"
+  },
+  {
+    "package": "next",
+    "version": "^15.3.4 resolved as 15.5.20",
+    "locations": ["apps/web/package.json"],
+    "classification": ["Core", "Frontend"],
+    "usedBy": ["@cacsms/web", "server.js via createRequire"],
+    "status": "Keep",
+    "risk": "Medium; lint script uses deprecated next lint behavior."
+  },
+  {
+    "package": "react",
+    "version": "^19.1.0 resolved as 19.2.7",
+    "locations": ["apps/web/package.json"],
+    "classification": ["Core", "UI"],
+    "usedBy": ["@cacsms/web"],
+    "status": "Keep",
+    "risk": "Low"
+  },
+  {
+    "package": "react-dom",
+    "version": "^19.1.0 resolved as 19.2.7",
+    "locations": ["apps/web/package.json"],
+    "classification": ["Core", "UI"],
+    "usedBy": ["@cacsms/web"],
+    "status": "Keep",
+    "risk": "Low"
+  },
+  {
+    "package": "lucide-react",
+    "version": "^0.468.0",
+    "locations": ["apps/web/package.json"],
+    "classification": ["UI"],
+    "usedBy": ["PlatformShell", "dashboard/features"],
+    "status": "Keep",
+    "risk": "Low"
+  },
+  {
+    "package": "tsx",
+    "version": "^4.20.3",
+    "locations": ["apps/api/package.json"],
+    "classification": ["Development", "Backend runtime tooling"],
+    "usedBy": ["@cacsms/api dev script"],
+    "status": "Keep until API runtime is formalized.",
+    "risk": "Low"
+  },
+  {
+    "package": "@cacsms/contracts",
+    "version": "workspace:*",
+    "locations": ["apps/web/package.json", "apps/api/package.json"],
+    "classification": ["Core", "Shared"],
+    "usedBy": ["@cacsms/web", "@cacsms/api"],
+    "status": "Keep",
+    "risk": "Low"
+  },
+  {
+    "package": "@types/node, @types/react, @types/react-dom",
+    "version": "^22.15.30, ^19.1.6, ^19.1.6",
+    "locations": ["apps/web/package.json"],
+    "classification": ["Development", "Types"],
+    "usedBy": ["@cacsms/web typecheck"],
+    "status": "Keep",
+    "risk": "Low"
+  }
+]

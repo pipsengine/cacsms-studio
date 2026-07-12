@@ -1,0 +1,90 @@
+[
+  {
+    "id": "RISK-001",
+    "severity": "High",
+    "area": "Backend",
+    "risk": "apps/api does not expose an HTTP API runtime.",
+    "evidence": "apps/api/src/main.ts exports/logs apiManifest only; no HTTP server, routes, middleware, validation, or database access.",
+    "impact": "Frontend pages cannot consume real backend APIs beyond Next /api/health.",
+    "recommendedCorrection": "In a later sequence, formalize API runtime responsibilities without replacing the stack.",
+    "requiredSequence": "Sequence 2 or later backend foundation sequence",
+    "blocking": false
+  },
+  {
+    "id": "RISK-002",
+    "severity": "High",
+    "area": "Database",
+    "risk": "No configured database connection, ORM, query library, migrations, schemas, or seed scripts were found.",
+    "evidence": "packages/database and infrastructure/database contain README placeholders only; package dependencies include no database libraries.",
+    "impact": "Business modules cannot persist state yet; SQL Server is not confirmed as configured.",
+    "recommendedCorrection": "Add database configuration and migration baseline only when the database sequence begins.",
+    "requiredSequence": "Database foundation sequence",
+    "blocking": false
+  },
+  {
+    "id": "RISK-003",
+    "severity": "Medium",
+    "area": "Runtime",
+    "risk": "server.js duplicates app data and fallback UI.",
+    "evidence": "server.js embeds module lists, production types, pipeline stages, CSS, and fallback HTML separately from @cacsms/contracts and Next components.",
+    "impact": "Navigation and counts can drift between fallback and main app.",
+    "recommendedCorrection": "Refactor fallback to consume shared contracts or reduce fallback surface later.",
+    "requiredSequence": "Runtime hardening sequence",
+    "blocking": false
+  },
+  {
+    "id": "RISK-004",
+    "severity": "Medium",
+    "area": "Styling",
+    "risk": "Global CSS contains multiple layout systems and static page styles outside a formal design token system.",
+    "evidence": "apps/web/app/globals.css contains shared shell, module workspace, landing dashboard, and dark sidebar overrides; static public pages each have separate CSS.",
+    "impact": "Future module work can accidentally regress sidebar/layout styling.",
+    "recommendedCorrection": "Create a documented token/component style layer before broad UI expansion.",
+    "requiredSequence": "Design system sequence",
+    "blocking": false
+  },
+  {
+    "id": "RISK-005",
+    "severity": "Medium",
+    "area": "Scripts",
+    "risk": "lint command is interactive/broken.",
+    "evidence": "pnpm --filter @cacsms/web lint invokes next lint, which prompts for ESLint configuration and exits non-zero.",
+    "impact": "CI linting is not usable.",
+    "recommendedCorrection": "Migrate to ESLint CLI/config in a later maintenance sequence.",
+    "requiredSequence": "Tooling cleanup sequence",
+    "blocking": false
+  },
+  {
+    "id": "RISK-006",
+    "severity": "Medium",
+    "area": "Testing",
+    "risk": "Test scripts only run TypeScript checks; no behavioral tests exist.",
+    "evidence": "tests/* contain README placeholders; package test scripts run tsc --noEmit.",
+    "impact": "UI/runtime regressions can pass test commands.",
+    "recommendedCorrection": "Add focused tests after stable API/UI contracts are defined.",
+    "requiredSequence": "Testing foundation sequence",
+    "blocking": false
+  },
+  {
+    "id": "RISK-007",
+    "severity": "Low",
+    "area": "Configuration",
+    "risk": "No environment validation layer exists.",
+    "evidence": "server.js reads process.env directly and Next health route reads CACSMS_PUBLIC_PORT directly.",
+    "impact": "Misconfiguration may surface at runtime instead of startup.",
+    "recommendedCorrection": "Add non-auth config validation later.",
+    "requiredSequence": "Configuration foundation sequence",
+    "blocking": false
+  },
+  {
+    "id": "RISK-008",
+    "severity": "Informational",
+    "area": "Security readiness",
+    "risk": "Authentication and authorization are intentionally absent.",
+    "evidence": "No middleware, login routes, session/token dependency, or protected routes found.",
+    "impact": "Appropriate for current development access rule; not production-secure yet.",
+    "recommendedCorrection": "Document future hooks only until Administration/security sequence.",
+    "requiredSequence": "Final administration/security sequence",
+    "blocking": false
+  }
+]
