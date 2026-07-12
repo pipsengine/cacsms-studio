@@ -1,0 +1,14 @@
+param(
+  [string]$RootPath = "C:\Next-Generation\cacsms-studio",
+  [int]$InternalPort = 3018,
+  [int]$PublicPort = 3008
+)
+
+$ErrorActionPreference = "Stop"
+
+Set-Location $RootPath
+$env:NODE_ENV = "production"
+$env:PORT = "$InternalPort"
+$env:CACSMS_PUBLIC_PORT = "$PublicPort"
+
+node "$RootPath\server.js"
