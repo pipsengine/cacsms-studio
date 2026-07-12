@@ -39,8 +39,14 @@ import {
   opportunityStates,
   productionPipeline
 } from "@cacsms/contracts";
+import { ExecutiveDashboard } from "@/features/executive-dashboard/ExecutiveDashboard";
+import { getExecutiveDashboardData } from "@/lib/executive-dashboard-data";
+import { MyWorkspaceDashboard } from "@/features/my-workspace/MyWorkspaceDashboard";
+import { getMyWorkspaceData } from "@/lib/my-workspace-data";
+import { ActiveProductionsPage } from "@/features/active-productions/ActiveProductionsPage";
+import { RecentProductionsPage } from "@/features/recent-productions/RecentProductionsPage";
 
-export function ModuleWorkspace({
+export async function ModuleWorkspace({
   moduleSlug,
   workspaceSlug
 }: {
@@ -61,6 +67,24 @@ export function ModuleWorkspace({
 
   const workspace = workspaceSlug ? module.children.find((child) => child.slug === workspaceSlug) : undefined;
   const title = workspace?.label ?? module.label;
+
+  if (module.slug === "dashboard" && workspace?.slug === "executive-dashboard") {
+    const data = await getExecutiveDashboardData();
+    return <ExecutiveDashboard data={data} />;
+  }
+
+  if (module.slug === "dashboard" && workspace?.slug === "my-workspace") {
+    const data = await getMyWorkspaceData();
+    return <MyWorkspaceDashboard data={data} />;
+  }
+
+  if (module.slug === "dashboard" && workspace?.slug === "active-productions") {
+    return <ActiveProductionsPage />;
+  }
+
+  if (module.slug === "dashboard" && workspace?.slug === "recent-productions") {
+    return <RecentProductionsPage />;
+  }
 
   if (module.slug === "opportunity-intelligence") {
     return <OpportunityIntelligenceWorkspace title={title} workspaceLabel={workspace?.label} />;
