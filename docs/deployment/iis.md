@@ -7,6 +7,7 @@ CACSMS Studio is configured for IIS hosting on port `3008`.
 - Windows Server with IIS enabled
 - Node.js 20 or newer
 - pnpm 9.15.4
+- NSSM (the Non-Sucking Service Manager) available on `PATH`
 - IIS URL Rewrite module
 - IIS Application Request Routing with proxy enabled
 
@@ -46,6 +47,10 @@ Run PowerShell as Administrator:
 ```powershell
 powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-node-windows-service.ps1
 ```
+
+Run the service installer from an elevated PowerShell session. It configures the
+`cacsms-studio-node` service for automatic startup, restart on failure, and logs
+under `logs/`.
 
 ## Verify
 

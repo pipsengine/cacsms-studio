@@ -109,7 +109,7 @@ export async function ModuleWorkspace({
             {module.children.slice(0, 9).map((child) => (
               <Link
                 className="button"
-                href={module.slug === "productions" && child.slug === "create-production" ? "/productions/create" : `/${module.slug}/${child.slug}`}
+                href={module.slug === "productions" ? `/production-studio/${child.slug}` : module.slug === "intelligence" ? `/content-intelligence/${child.slug}` : `/${module.slug}/${child.slug}`}
                 key={child.slug}
               >
                 {child.label}

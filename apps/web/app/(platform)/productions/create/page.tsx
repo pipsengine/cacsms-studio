@@ -1,5 +1,5 @@
-import { ProductionWizard } from "@/features/production-wizard";
+import { redirect } from "next/navigation";
 
 export default function CreateProductionPage() {
-  return <ProductionWizard />;
+  redirect("/production-studio/create-production");
 }

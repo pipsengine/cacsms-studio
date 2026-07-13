@@ -222,7 +222,7 @@ function PerformancePanel({ performance }: { performance: MyWorkspaceResponse["c
 function ActivityPanel({ items }: { items: ActivityItem[] }) {
   return (
     <section className={`${styles.panel} ${styles.activityPanel}`}>
-      <PanelHeader title="My Recent Activity" href="/dashboard/agent-activity" />
+      <PanelHeader title="My Recent Activity" href="/home/agent-activity" />
       <div className={styles.feed}>{items.map((item) => <article key={item.id}><span className={`${styles.feedIcon} ${styles[item.tone]}`}><Activity size={16} aria-hidden="true" /></span><div><strong>{item.title}</strong><small>{item.module}</small></div><time>{item.timeAgo}</time></article>)}</div>
     </section>
   );
@@ -231,7 +231,7 @@ function ActivityPanel({ items }: { items: ActivityItem[] }) {
 function NotificationPanel({ items }: { items: NotificationItem[] }) {
   return (
     <section className={`${styles.panel} ${styles.notificationPanel}`}>
-      <PanelHeader title="My Notifications" href="/dashboard/notifications" action={`View All (${items.length})`} />
+      <PanelHeader title="My Notifications" href="/home/notifications" action={`View All (${items.length})`} />
       <div className={styles.feed}>{items.map((item) => <article key={item.id}><span className={`${styles.feedIcon} ${styles[item.tone]}`}><Bell size={16} aria-hidden="true" /></span><div><strong>{item.title}</strong><small>{item.subtitle}</small></div><time>{item.timeAgo}</time>{item.unread ? <i className={styles.unreadDot} /> : null}</article>)}</div>
     </section>
   );
@@ -240,7 +240,7 @@ function NotificationPanel({ items }: { items: NotificationItem[] }) {
 function DeadlinePanel({ items }: { items: DeadlineItem[] }) {
   return (
     <section className={`${styles.panel} ${styles.deadlinePanel}`}>
-      <PanelHeader title="My Deadlines" href="/dashboard/calendar" />
+      <PanelHeader title="My Deadlines" href="/home/calendar" />
       <div className={styles.deadlineList}>{items.length ? items.map((item) => <article key={item.id}><time>{item.date}</time><div><strong>{item.title}</strong><small>{item.module}</small></div><span>{item.remaining}</span><em className={priorityClass[item.priority]}>{item.priority}</em></article>) : <EmptyState>No deadlines scheduled.</EmptyState>}</div>
     </section>
   );
@@ -274,7 +274,7 @@ function StoragePanel({ storage }: { storage: MyWorkspaceResponse["storage"] }) 
 
 function QuickActions() {
   const actions = [
-    { label: "New Production", icon: Plus, href: "/productions/create" },
+    { label: "New Production", icon: Plus, href: "/production-studio/create-production" },
     { label: "Upload Media", icon: Upload, href: "/assets" },
     { label: "Create Script", icon: FileText, href: "/writing/script-generator" },
     { label: "Schedule Publish", icon: CalendarDays, href: "/publishing/scheduler" },
@@ -297,7 +297,7 @@ export function MyWorkspaceDashboard({ data }: { data: MyWorkspaceResponse }) {
         <div className={styles.headerTools}>
           <Link href="/dashboard/my-workspace">Workspace<br /><strong>CACSMS Studio</strong></Link>
           <Link href="/settings/branding">Brand<br /><strong>CACSMS</strong></Link>
-          <Link className={styles.dateButton} href="/dashboard/calendar">{new Date(data.generatedAt).toLocaleDateString()} <CalendarDays size={16} /></Link>
+          <Link className={styles.dateButton} href="/home/calendar">{new Date(data.generatedAt).toLocaleDateString()} <CalendarDays size={16} /></Link>
           <Link href="/dashboard/my-workspace"><Activity size={16} /> Refresh</Link>
           <Link href="/dashboard/my-workspace/search" aria-label="Search"><Search size={17} /></Link>
           <Link href="/settings" aria-label="More"><MoreHorizontal size={17} /></Link>

@@ -63,7 +63,7 @@ export function Dashboard() {
           </p>
           <div className="grid" style={{ marginTop: 14 }}>
             {[
-              { href: "/productions/create", icon: Clapperboard, label: "Create Production" },
+              { href: "/production-studio/create-production", icon: Clapperboard, label: "Create Production" },
               { href: "/opportunity-intelligence", icon: Telescope, label: "Opportunity Intelligence" },
               { href: "/knowledge-universe", icon: DatabaseZap, label: "Knowledge Universe" },
               { href: "/intelligence", icon: Wand2, label: "Content Intelligence" },

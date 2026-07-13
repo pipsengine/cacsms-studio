@@ -95,10 +95,13 @@ const moduleGroups = [
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const activeModule =
+    (pathname.startsWith("/home/") ? navigationModules.find((module) => module.slug === "dashboard") : undefined) ??
+    (pathname.startsWith("/production-studio") ? navigationModules.find((module) => module.slug === "productions") : undefined) ??
+    (pathname.startsWith("/content-intelligence") ? navigationModules.find((module) => module.slug === "intelligence") : undefined) ??
     navigationModules.find((module) => pathname === `/${module.slug}` || pathname.startsWith(`/${module.slug}/`)) ??
     navigationModules.find((module) => module.slug === "dashboard");
   const [openModule, setOpenModule] = useState<string | null>(activeModule?.slug ?? "dashboard");
-  const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+  const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname.startsWith("/home/") || pathname.startsWith("/production-studio") || pathname.startsWith("/content-intelligence");
   const groupedModules = useMemo(
     () =>
       moduleGroups.map((group) => ({
@@ -143,7 +146,9 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
               {group.modules.map((module) => {
                 const sourceIndex = navigationModules.findIndex((item) => item.slug === module.slug);
                 const Icon = icons[sourceIndex] ?? Boxes;
-                const isActive = activeModule?.slug === module.slug;
+                const isActive = pathname === "/production-studio/create-production"
+                  ? module.slug === "dashboard"
+                  : activeModule?.slug === module.slug;
                 const isOpen = openModule === module.slug;
                 return (
                   <details
@@ -156,7 +161,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
                   >
                     <summary className={`nav-item${isActive ? " active" : ""}`}>
                       <Icon size={16} aria-hidden="true" />
-                      <Link href={`/${module.slug}`}>{module.label}</Link>
+                      <Link href={hrefForModule(module.slug)}>{module.label}</Link>
                       <span className="nav-badge">{formatCount(module.children.length, module.slug)}</span>
                       {isOpen ? <ChevronDown className="nav-chevron" aria-hidden="true" /> : <ChevronRight className="nav-chevron" aria-hidden="true" />}
                     </summary>
@@ -204,7 +209,18 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
 }
 
 function hrefForChild(moduleSlug: string, childSlug: string) {
-  return moduleSlug === "productions" && childSlug === "create-production" ? "/productions/create" : `/${moduleSlug}/${childSlug}`;
+  if (moduleSlug === "dashboard" && ["production-pipeline", "rendering-monitor", "agent-activity", "publishing-overview", "calendar", "notifications", "system-health"].includes(childSlug)) {
+    return `/home/${childSlug}`;
+  }
+  if (moduleSlug === "productions") return `/production-studio/${childSlug}`;
+  if (moduleSlug === "intelligence") return `/content-intelligence/${childSlug}`;
+  return `/${moduleSlug}/${childSlug}`;
+}
+
+function hrefForModule(moduleSlug: string) {
+  if (moduleSlug === "productions") return "/production-studio";
+  if (moduleSlug === "intelligence") return "/content-intelligence";
+  return `/${moduleSlug}`;
 }
 
 function isActiveChild(moduleSlug: string, childSlug: string, pathname: string) {

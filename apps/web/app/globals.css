@@ -2157,3 +2157,21 @@ textarea {
     padding: 10px;
   }
 }
+
+.operational-loading-header,
+.operational-loading-grid > div,
+.operational-loading-body {
+  border-radius: 14px;
+  background: #edf1f6;
+  animation: operational-pulse 1.3s ease-in-out infinite alternate;
+}
+
+.operational-loading-header { height: 96px; margin-bottom: 16px; }
+.operational-loading-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.operational-loading-grid > div { height: 120px; }
+.operational-loading-body { height: 520px; margin-top: 16px; }
+.operational-error { padding: 24px; }
+
+@keyframes operational-pulse {
+  to { opacity: 0.55; }
+}

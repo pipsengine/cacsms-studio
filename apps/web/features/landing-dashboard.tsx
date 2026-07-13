@@ -99,13 +99,13 @@ export function LandingDashboard() {
           <p>Your autonomous studio is operating at peak performance.</p>
         </div>
         <div className="landing-actions">
-          <Link className="landing-project" href="/productions/active-productions">
+          <Link className="landing-project" href="/production-studio/all-productions">
             Project: <b>The Future of AI</b>
           </Link>
           <Link className="landing-mode" href="/automation">
             <i /> Autonomous Mode <b>{running && !paused ? "ON" : paused ? "PAUSED" : "OFF"}</b>
           </Link>
-          <Link className="landing-icon-btn" aria-label="Notifications" href="/dashboard/notifications">
+          <Link className="landing-icon-btn" aria-label="Notifications" href="/home/notifications">
             <Bell size={18} />
             <em>{notifications.length}</em>
           </Link>
@@ -145,7 +145,7 @@ export function LandingDashboard() {
 
       <section className="landing-grid">
         <article className="landing-card landing-span-3">
-          <CardHead title="LIVE PRODUCTION OVERVIEW" action="View all" href="/productions/active-productions" />
+          <CardHead title="LIVE PRODUCTION OVERVIEW" action="View all" href="/production-studio/all-productions" />
           <div className="landing-production">
             <div className="landing-poster" />
             <div>
@@ -164,11 +164,11 @@ export function LandingDashboard() {
             <Task color="orange" text="Creating motion graphics" value="Completed" />
             <Task color="blue" text="AI QA pre-check" value="Pending" />
           </ul>
-          <Link className="landing-link-btn" href="/productions/active-productions">Open Production Workspace <ArrowRight size={15} /></Link>
+          <Link className="landing-link-btn" href="/production-studio/all-productions">Open Production Workspace <ArrowRight size={15} /></Link>
         </article>
 
         <article className="landing-card landing-span-3">
-          <CardHead title="TODAY'S SCHEDULE" action="View Full Calendar" href="/dashboard/calendar" />
+          <CardHead title="TODAY'S SCHEDULE" action="View Full Calendar" href="/home/calendar" />
           <div className="landing-schedule">
             {scheduleItems.map((item) => <ScheduleRow key={item.join("-")} item={item} />)}
           </div>
@@ -182,7 +182,7 @@ export function LandingDashboard() {
         </article>
 
         <article className="landing-card landing-span-3">
-          <CardHead title="SYSTEM STATUS" action="View Details" href="/dashboard/system-health" />
+          <CardHead title="SYSTEM STATUS" action="View Details" href="/home/system-health" />
           <div className="landing-systems">
             {[
               [Cpu, "AI Services", "Operational"],
@@ -222,7 +222,7 @@ export function LandingDashboard() {
         </article>
 
         <article className="landing-card landing-span-3">
-          <CardHead title="NOTIFICATIONS" action="View All" href="/dashboard/notifications" />
+          <CardHead title="NOTIFICATIONS" action="View All" href="/home/notifications" />
           <div className="landing-notes">
             {notifications.map(([note, time], index) => (
               <div key={note}><i className={`d${index % 4}`} /><span>{note}</span><time>{time}</time></div>
