@@ -64,7 +64,7 @@ BEGIN TRY
       Code nvarchar(50) NOT NULL,
       Title nvarchar(300) NOT NULL,
       ProductionType nvarchar(100) NOT NULL,
-      Stage nvarchar(100) NOT NULL CONSTRAINT DF_Productions_Stage DEFAULT N'content-intelligence',
+      Stage nvarchar(100) NOT NULL CONSTRAINT DF_Productions_Stage DEFAULT N'discover',
       Status nvarchar(30) NOT NULL CONSTRAINT DF_Productions_Status DEFAULT N'draft',
       Priority nvarchar(20) NOT NULL CONSTRAINT DF_Productions_Priority DEFAULT N'medium',
       Progress tinyint NOT NULL CONSTRAINT DF_Productions_Progress DEFAULT 0,
@@ -243,9 +243,9 @@ BEGIN TRY
 
     GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::cacsms TO cacsms_app;
     GRANT EXECUTE ON SCHEMA::cacsms TO cacsms_app;
-    DENY ALTER, CONTROL ON SCHEMA::cacsms TO cacsms_app;
+    DENY ALTER ON SCHEMA::cacsms TO cacsms_app;
 
-    IF IS_ROLEMEMBER(N'cacsms_app', N'$(ApplicationUser)') <> 1
+    IF ISNULL(IS_ROLEMEMBER(N'cacsms_app', N'$(ApplicationUser)'), 0) <> 1
       ALTER ROLE cacsms_app ADD MEMBER [$(ApplicationUser)];
 
     INSERT dbo.SchemaMigrations (Version, Name, Checksum)

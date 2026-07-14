@@ -101,7 +101,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     navigationModules.find((module) => pathname === `/${module.slug}` || pathname.startsWith(`/${module.slug}/`)) ??
     navigationModules.find((module) => module.slug === "dashboard");
   const [openModule, setOpenModule] = useState<string | null>(activeModule?.slug ?? "dashboard");
-  const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname.startsWith("/home/") || pathname.startsWith("/production-studio") || pathname.startsWith("/content-intelligence");
+  const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname.startsWith("/home/") || pathname.startsWith("/production-studio") || pathname.startsWith("/content-intelligence") || pathname.startsWith("/opportunity-intelligence");
   const groupedModules = useMemo(
     () =>
       moduleGroups.map((group) => ({
@@ -209,8 +209,17 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
 }
 
 function hrefForChild(moduleSlug: string, childSlug: string) {
-  if (moduleSlug === "dashboard" && ["production-pipeline", "rendering-monitor", "agent-activity", "publishing-overview", "calendar", "notifications", "system-health"].includes(childSlug)) {
+  if (moduleSlug === "dashboard" && childSlug === "production-workflow") {
+    return "/production-workflow/index.html";
+  }
+  if (moduleSlug === "dashboard" && childSlug === "production-pipeline") {
+    return "/production-pipeline/index.html";
+  }
+  if (moduleSlug === "dashboard" && ["rendering-monitor", "agent-activity", "publishing-overview", "calendar", "notifications", "system-health"].includes(childSlug)) {
     return `/home/${childSlug}`;
+  }
+  if (moduleSlug === "productions" && childSlug === "production-pipeline") {
+    return "/production-pipeline/index.html";
   }
   if (moduleSlug === "productions") return `/production-studio/${childSlug}`;
   if (moduleSlug === "intelligence") return `/content-intelligence/${childSlug}`;

@@ -8,6 +8,7 @@ export interface MetricCard {
   deltaDirection: "up" | "down" | "flat";
   tone: StatusTone;
   sparkline: number[];
+  context: string;
 }
 
 export interface PipelineStageSummary {
@@ -19,12 +20,20 @@ export interface PipelineStageSummary {
 
 export interface ExecutiveDashboardData {
   generatedAt: string;
+  filters: {
+    workspaceId: string;
+    brandId: string | null;
+    periodDays: number;
+    workspaces: Array<{ id: string; name: string }>;
+    brands: Array<{ id: string; name: string }>;
+  };
   platform: {
-    status: "Running" | "Paused" | "Stopped" | "Starting" | "Stopping" | "Degraded" | "Failed" | "Maintenance";
+    status: "Idle" | "Running" | "Paused" | "Stopped" | "Starting" | "Stopping" | "Degraded" | "Failed" | "Maintenance";
     autonomousMode: string;
     currentOperation: string;
     currentStage: string;
     stageProgress: string;
+    stageProgressPercent: number;
     activeProductions: number;
     runningWorkflows: number;
     activeAgents: number;

@@ -1,93 +1,10 @@
-import type { ActiveProductionsQuery, ActiveProductionsResponse } from "@/types/active-productions";
-
-function clampNumber(value: unknown, fallback: number, min: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(parsed)));
-}
-
-export function parseActiveProductionsQuery(searchParams: URLSearchParams): Required<Pick<ActiveProductionsQuery, "page" | "pageSize" | "sort">> &
-  Omit<ActiveProductionsQuery, "page" | "pageSize" | "sort"> {
-  return {
-    workspaceId: searchParams.get("workspaceId") ?? undefined,
-    brandId: searchParams.get("brandId") ?? undefined,
-    from: searchParams.get("from") ?? undefined,
-    to: searchParams.get("to") ?? undefined,
-    status: searchParams.get("status") ?? undefined,
-    stage: searchParams.get("stage") ?? undefined,
-    priority: searchParams.get("priority") ?? undefined,
-    search: searchParams.get("search") ?? undefined,
-    sort: searchParams.get("sort") ?? "deadline:asc",
-    page: clampNumber(searchParams.get("page"), 1, 1, 100000),
-    pageSize: clampNumber(searchParams.get("pageSize"), 10, 1, 100)
-  };
-}
-
-export async function getActiveProductionsData(
-  query: ActiveProductionsQuery = {}
-): Promise<ActiveProductionsResponse> {
-  const page = clampNumber(query.page, 1, 1, 100000);
-  const pageSize = clampNumber(query.pageSize, 10, 1, 100);
-
-  return {
-    generatedAt: new Date().toISOString(),
-    filters: {
-      workspaceId: query.workspaceId ?? null,
-      brandId: query.brandId ?? null,
-      from: query.from ?? null,
-      to: query.to ?? null
-    },
-    metrics: [
-      { key: "active", label: "Active Productions", value: 0, trend: "flat", percent: null },
-      { key: "onTrack", label: "On Track", value: 0, trend: "flat", percent: null },
-      { key: "atRisk", label: "At Risk", value: 0, trend: "flat", percent: null },
-      { key: "delayed", label: "Delayed", value: 0, trend: "flat", percent: null },
-      { key: "paused", label: "Paused", value: 0, trend: "flat", percent: null },
-      { key: "avgProgress", label: "Avg. Progress", value: "0%", trend: "flat", percent: null }
-    ],
-    productions: [],
-    stageBreakdown: [],
-    healthBreakdown: [
-      { status: "on-track", count: 0, percentage: 0 },
-      { status: "at-risk", count: 0, percentage: 0 },
-      { status: "delayed", count: 0, percentage: 0 },
-      { status: "paused", count: 0, percentage: 0 }
-    ],
-    deadlines: [],
-    risks: [],
-    activity: [],
-    workload: [],
-    total: 0,
-    page,
-    pageSize
-  };
-}
-
-export async function exportActiveProductionsCsv(query: ActiveProductionsQuery = {}) {
-  const data = await getActiveProductionsData(query);
-  const rows = [
-    ["Code", "Title", "Type", "Stage", "Owner", "Progress", "Status", "Deadline", "Priority"],
-    ...data.productions.map((production) => [
-      production.code,
-      production.title,
-      production.type,
-      production.stage,
-      production.owner.name,
-      String(production.progress),
-      production.healthStatus,
-      production.deadline,
-      production.priority
-    ])
-  ];
-
-  return rows
-    .map((row) =>
-      row
-        .map((cell) => {
-          const value = String(cell);
-          return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-        })
-        .join(",")
-    )
-    .join("\n");
-}
+import sql from "mssql";
+import {getMssqlPool} from "@/lib/database/mssql";
+import type {ActiveProductionsQuery,ActiveProductionsResponse,ActiveProduction,HealthStatus} from "@/types/active-productions";
+function clamp(v:unknown,f:number,min:number,max:number){const n=Number(v);return Number.isFinite(n)?Math.min(max,Math.max(min,Math.trunc(n))):f}
+export function parseActiveProductionsQuery(p:URLSearchParams){return{workspaceId:p.get("workspaceId")??undefined,brandId:p.get("brandId")??undefined,from:p.get("from")??undefined,to:p.get("to")??undefined,status:p.get("status")??undefined,stage:p.get("stage")??undefined,priority:p.get("priority")??undefined,search:p.get("search")??undefined,sort:p.get("sort")??"deadline:asc",page:clamp(p.get("page"),1,1,100000),pageSize:clamp(p.get("pageSize"),10,1,100)}}
+type Row={ProductionId:string;Code:string;Title:string;ProductionType:string;Stage:string;Status:string;Priority:string;Progress:number;DueAt:Date|null;UpdatedAt:Date;OwnerId:string|null;OwnerName:string|null;OwnerRole:string|null};
+function health(x:Row):HealthStatus{if(x.Status==="blocked"||x.Priority==="critical")return"at-risk";if(x.Status==="draft")return"paused";if(x.DueAt&&new Date(x.DueAt)<new Date())return"delayed";return"on-track"}
+function type(v:string):ActiveProduction["type"]{const x=v.toLowerCase();if(/video|documentary|explainer|tutorial/.test(x))return"video";if(/audio|podcast/.test(x))return"audio";if(/article|corporate|social/.test(x))return"article";if(/script|story/.test(x))return"script";if(/image|visual/.test(x))return"image";return"other"}
+export async function getActiveProductionsData(q:ActiveProductionsQuery={}):Promise<ActiveProductionsResponse>{const page=clamp(q.page,1,1,100000),pageSize=clamp(q.pageSize,10,1,100),pool=await getMssqlPool();const w=await pool.request().query<{WorkspaceId:string}>(`SELECT TOP(1) WorkspaceId FROM cacsms.Workspaces WHERE Status=N'active' ORDER BY CreatedAt;`),workspace=q.workspaceId||w.recordset[0]?.WorkspaceId;if(!workspace)throw new Error("No active workspace.");const result=await pool.request().input("workspace",sql.UniqueIdentifier,workspace).input("search",sql.NVarChar(300),q.search||null).input("stage",sql.NVarChar(100),q.stage||null).input("priority",sql.NVarChar(20),q.priority||null).query<Row>(`SELECT p.ProductionId,p.Code,p.Title,p.ProductionType,p.Stage,p.Status,p.Priority,p.Progress,p.DueAt,p.UpdatedAt,u.UserId OwnerId,u.DisplayName OwnerName,u.Role OwnerRole FROM cacsms.Productions p LEFT JOIN cacsms.Users u ON u.UserId=p.OwnerId WHERE p.WorkspaceId=@workspace AND p.Status IN(N'draft',N'queued',N'active',N'blocked',N'in-review',N'approved') AND (@search IS NULL OR p.Title LIKE N'%'+@search+N'%' OR p.Code LIKE N'%'+@search+N'%') AND (@stage IS NULL OR p.Stage=@stage) AND (@priority IS NULL OR p.Priority=@priority) ORDER BY ISNULL(p.DueAt,'9999-12-31'),p.UpdatedAt DESC;`);const all=result.recordset,total=all.length,slice=all.slice((page-1)*pageSize,page*pageSize),productions=slice.map(x=>{const deadline=x.DueAt?new Date(x.DueAt):new Date();return{id:String(x.ProductionId),code:x.Code,title:x.Title,type:type(x.ProductionType),stage:x.Stage,owner:{id:x.OwnerId||"unassigned",name:x.OwnerName||"Unassigned",role:x.OwnerRole||undefined},progress:Number(x.Progress),healthStatus:health(x),deadline:deadline.toISOString(),daysRemaining:Math.ceil((deadline.getTime()-Date.now())/86400000),priority:(x.Priority==="critical"?"high":x.Priority) as "high"|"medium"|"low",updatedAt:new Date(x.UpdatedAt).toISOString()}});const stageMap=Object.entries(all.reduce<Record<string,number>>((a,x)=>(a[x.Stage]=(a[x.Stage]||0)+1,a),{}));const healthValues=(["on-track","at-risk","delayed","paused"] as HealthStatus[]).map(s=>({status:s,count:all.filter(x=>health(x)===s).length,percentage:total?Math.round(all.filter(x=>health(x)===s).length/total*100):0}));return{generatedAt:new Date().toISOString(),filters:{workspaceId:workspace,brandId:q.brandId||null,from:q.from||null,to:q.to||null},metrics:[{key:"active",label:"Active Productions",value:total,trend:"flat"},{key:"onTrack",label:"On Track",value:healthValues[0].count,trend:"flat"},{key:"atRisk",label:"At Risk",value:healthValues[1].count,trend:"flat"},{key:"delayed",label:"Delayed",value:healthValues[2].count,trend:"flat"},{key:"paused",label:"Paused",value:healthValues[3].count,trend:"flat"},{key:"avgProgress",label:"Avg. Progress",value:`${total?Math.round(all.reduce((s,x)=>s+x.Progress,0)/total):0}%`,trend:"flat"}],productions,stageBreakdown:stageMap.map(([stage,count])=>({stage,count,percentage:total?Math.round(count/total*100):0})),healthBreakdown:healthValues,deadlines:all.filter(x=>x.DueAt).slice(0,5).map(x=>({productionId:String(x.ProductionId),title:x.Title,type:x.ProductionType,deadline:new Date(x.DueAt!).toISOString(),daysRemaining:Math.ceil((new Date(x.DueAt!).getTime()-Date.now())/86400000)})),risks:healthValues.filter(x=>x.status!=="on-track"&&x.count).map(x=>({key:x.status,label:x.status.replace("-"," "),description:"Derived from live production status and deadlines",count:x.count,severity:x.status==="at-risk"?"high":"medium"})),activity:[],workload:[],total,page,pageSize};}
+export async function exportActiveProductionsCsv(q:ActiveProductionsQuery={}){const d=await getActiveProductionsData({...q,pageSize:100});return [["Code","Title","Type","Stage","Owner","Progress","Status","Deadline","Priority"],...d.productions.map(x=>[x.code,x.title,x.type,x.stage,x.owner.name,String(x.progress),x.healthStatus,x.deadline,x.priority])].map(r=>r.map(c=>/[",\n]/.test(c)?`"${c.replace(/"/g,'""')}"`:c).join(",")).join("\n")}

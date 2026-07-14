@@ -2,54 +2,69 @@ import type { NavigationModule, WorkflowStage } from "./types";
 
 export const productionPipeline: Array<{ id: WorkflowStage; label: string; description: string }> = [
   {
-    id: "content-intelligence",
-    label: "Content Intelligence",
-    description: "Discover topics, analyze sources, extract knowledge, and verify facts where required."
+    id: "discover",
+    label: "Discover",
+    description: "Scan audience, market, and knowledge signals for production opportunities."
   },
   {
-    id: "script-structure",
-    label: "Script and Structure",
-    description: "Generate scripts, narration, teaching sequences, story structures, hooks, and calls to action."
+    id: "research",
+    label: "Research",
+    description: "Research, corroborate, and verify the opportunity and its supporting evidence."
   },
   {
-    id: "scene-planning",
-    label: "Scene Planning",
-    description: "Break scripts into scenes, shots, teaching visuals, demonstrations, transitions, and motion plans."
+    id: "evaluate",
+    label: "Evaluate",
+    description: "Score, validate, and prioritize the production opportunity."
   },
   {
-    id: "visual-production",
-    label: "Visual Production",
-    description: "Create images, characters, environments, diagrams, charts, maps, graphics, and thumbnails."
+    id: "pre-plan",
+    label: "Pre-Plan",
+    description: "Define format, audience, channels, structure, and production requirements."
   },
   {
-    id: "video-animation",
-    label: "Video and Animation",
-    description: "Generate scene videos, presenter clips, animation, motion graphics, effects, and render previews."
+    id: "schedule",
+    label: "Schedule",
+    description: "Plan the timeline, assignments, dependencies, and publication dates."
   },
   {
-    id: "voice-music-sound",
-    label: "Voice, Music and Sound",
-    description: "Generate narration, dialogue, voice profiles, music, ambience, sound effects, cleanup, and mixing."
+    id: "produce",
+    label: "Produce",
+    description: "Create the script, visual, video, voice, music, and sound assets."
   },
   {
-    id: "timeline-assembly",
-    label: "Timeline Assembly",
-    description: "Synchronize video, narration, dialogue, music, subtitles, graphics, transitions, and render previews."
+    id: "assemble",
+    label: "Assemble",
+    description: "Build the timeline and integrate all production assets."
   },
   {
-    id: "quality-assurance",
-    label: "Quality Assurance",
-    description: "Run content, script, visual, audio, subtitle, continuity, accessibility, copyright, and safety checks."
+    id: "quality",
+    label: "Quality",
+    description: "Run AI and human quality, compliance, and safety reviews."
   },
   {
-    id: "hybrid-export",
-    label: "Hybrid Export",
-    description: "Package ready-to-publish MP4, CapCut-ready scenes, editable packages, and full production bundles."
+    id: "export",
+    label: "Export",
+    description: "Render and package the approved production deliverables."
   },
   {
-    id: "publishing",
-    label: "CapCut / Direct Publishing",
-    description: "Send approved packages to CapCut, social channels, learning platforms, podcasts, or scheduled queues."
+    id: "publish",
+    label: "Publish",
+    description: "Distribute approved outputs to configured publishing channels."
+  },
+  {
+    id: "monitor",
+    label: "Monitor",
+    description: "Track audience and production performance in real time."
+  },
+  {
+    id: "learn",
+    label: "Learn",
+    description: "Use verified outcomes to improve the autonomous production system."
+  },
+  {
+    id: "repeat",
+    label: "Repeat",
+    description: "Feed learning back into continuous opportunity discovery."
   }
 ];
 
@@ -63,6 +78,7 @@ export const navigationModules: NavigationModule[] = [
       "My Workspace",
       "Active Productions",
       "Recent Productions",
+      "Production Workflow",
       "Production Pipeline",
       "Rendering Monitor",
       "Agent Activity",

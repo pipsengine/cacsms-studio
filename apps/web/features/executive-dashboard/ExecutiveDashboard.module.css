@@ -37,6 +37,7 @@
 }
 
 .headerActions {
+  position: relative;
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -63,20 +64,89 @@
   font-size: 9px;
 }
 
-.selectButton strong {
+.selectButton select {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
   color: #17213a;
-  font-size: 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .iconButton {
   width: 42px;
   justify-content: center;
   padding: 0;
+  cursor: pointer;
+}
+
+.iconButton:disabled,
+.runActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.searchBox {
+  position: absolute;
+  z-index: 20;
+  top: 52px;
+  right: 0;
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr);
+  align-items: center;
+  width: min(480px, calc(100vw - 32px));
+  gap: 9px;
+  border: 1px solid #dce3ed;
+  border-radius: 10px;
+  background: white;
+  padding: 10px 12px;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.16);
+}
+
+.searchBox input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font-size: 13px;
+}
+
+.searchResults {
+  display: grid;
+  grid-column: 1 / -1;
+  max-height: 320px;
+  overflow-y: auto;
+  border-top: 1px solid #edf1f6;
+  padding-top: 7px;
+}
+
+.searchResults a {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 6px;
+  color: #17213a;
+  padding: 8px;
+  text-decoration: none;
+}
+
+.searchResults a:hover { background: #f5f3ff; }
+.searchResults span { color: #64748b; font-size: 11px; }
+
+.feedback {
+  margin: -6px 0 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #3730a3;
+  padding: 9px 12px;
+  font-size: 12px;
 }
 
 .commandBar {
   display: grid;
-  grid-template-columns: repeat(13, minmax(74px, 1fr)) auto;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   align-items: stretch;
   overflow: hidden;
   margin-bottom: 16px;
@@ -85,6 +155,8 @@
   background: #fff;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
+
+.commandCell { grid-column: span 3; }
 
 .commandCell,
 .commandStat {
@@ -100,13 +172,13 @@
 .commandCell small,
 .commandStat small {
   color: #6b7280;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .commandCell strong,
 .commandStat strong {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -119,6 +191,12 @@
   padding: 5px 9px;
   font-size: 10px;
 }
+
+.statusPill[data-status="Idle"] { background: #f1f5f9; color: #475569; }
+.statusPill[data-status="Paused"] { background: #fff7ed; color: #c2410c; }
+.statusPill[data-status="Stopped"],
+.statusPill[data-status="Degraded"],
+.statusPill[data-status="Failed"] { background: #fff1f2; color: #be123c; }
 
 .progress,
 .budget {
@@ -146,6 +224,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px;
+  grid-column: span 4;
+  justify-content: flex-end;
 }
 
 .runActions button {
@@ -158,6 +238,7 @@
   padding: 9px 12px;
   font-size: 11px;
   font-weight: 700;
+  cursor: pointer;
 }
 
 .startButton {
@@ -231,7 +312,7 @@
 
 .kpiLabel {
   color: #46526a;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .kpiValueRow {
@@ -263,7 +344,7 @@
   align-items: flex-end;
   justify-content: space-between;
   color: #7c879a;
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .sparkline {
@@ -301,12 +382,12 @@
 
 .panelHeader h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .panelHeader a {
   color: #6d28d9;
-  font-size: 9px;
+  font-size: 11px;
   text-decoration: none;
 }
 
@@ -346,8 +427,10 @@
   aspect-ratio: 1;
   place-items: center;
   border-radius: 50%;
-  background: conic-gradient(#14b8a6 0 var(--value), #7c3aed var(--value) 305deg, #f59e0b 305deg 330deg, #ef4444 330deg 350deg, #e5e7eb 350deg);
+  background: conic-gradient(#7c3aed 0 var(--value), #e5e7eb var(--value) 360deg);
 }
+
+.emptyDonut { background: #e5e7eb; }
 
 .donut > div {
   display: grid;
@@ -371,20 +454,21 @@
 .pipeline {
   display: flex;
   overflow-x: auto;
-  gap: 8px;
+  gap: 4px;
   padding-bottom: 8px;
 }
 
 .pipelineStage {
   position: relative;
-  min-width: 64px;
+  min-width: 0;
+  flex: 1 1 0;
   text-align: center;
 }
 
 .pipelineStage:not(:last-child)::after {
   position: absolute;
   top: 10px;
-  right: -8px;
+  right: -4px;
   color: #9aa4b2;
   content: ">";
 }
@@ -408,7 +492,7 @@
 }
 
 .pipelineStage strong {
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .pipelineStage span {
@@ -418,7 +502,7 @@
 
 .pipelineStage small {
   color: #ef4444;
-  font-size: 7px;
+  font-size: 8px;
 }
 
 .pipelineBars > div {
@@ -427,7 +511,7 @@
   align-items: center;
   gap: 8px;
   margin-top: 8px;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .pipelineBars > div > div {
@@ -448,7 +532,7 @@
   display: flex;
   gap: 15px;
   color: #64748b;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .lineChart {
@@ -525,13 +609,13 @@
   border-bottom: 1px solid #e8edf4;
   color: #69758a;
   padding-bottom: 7px;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .tableRow {
   border-bottom: 1px solid #edf1f6;
   padding: 7px 0;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .tableRow > span:first-child {
@@ -630,13 +714,13 @@
 }
 
 .activityList strong {
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .activityList small,
 .activityList time {
   color: #718096;
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .healthList b {
@@ -652,10 +736,11 @@
   justify-content: space-between;
   color: #7c8798;
   padding: 22px 5px 0;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .emptyState {
+  width: 100%;
   border: 1px dashed #d7deea;
   border-radius: 8px;
   background: #f8fafc;
@@ -708,6 +793,9 @@
   .commandBar {
     grid-template-columns: repeat(4, 1fr);
   }
+
+  .commandCell { grid-column: span 2; }
+  .runActions { grid-column: 1 / -1; }
 }
 
 @media (max-width: 680px) {
@@ -723,6 +811,9 @@
   .commandBar {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .commandCell,
+  .runActions { grid-column: 1 / -1; }
 
   .headerActions {
     display: grid;

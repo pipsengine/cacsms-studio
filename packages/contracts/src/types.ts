@@ -23,16 +23,19 @@ export type ProductionFormat =
 export type RequirementLevel = "mandatory" | "recommended" | "optional";
 
 export type WorkflowStage =
-  | "content-intelligence"
-  | "script-structure"
-  | "scene-planning"
-  | "visual-production"
-  | "video-animation"
-  | "voice-music-sound"
-  | "timeline-assembly"
-  | "quality-assurance"
-  | "hybrid-export"
-  | "publishing";
+  | "discover"
+  | "research"
+  | "evaluate"
+  | "pre-plan"
+  | "schedule"
+  | "produce"
+  | "assemble"
+  | "quality"
+  | "export"
+  | "publish"
+  | "monitor"
+  | "learn"
+  | "repeat";
 
 export interface NavigationChild {
   label: string;

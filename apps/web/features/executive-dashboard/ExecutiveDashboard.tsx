@@ -1,5 +1,8 @@
+"use client";
+
 import type React from "react";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -74,7 +77,7 @@ function KpiCard({ metric, index }: { metric: MetricCard; index: number }) {
           <span className={metric.deltaDirection === "down" ? styles.deltaDown : styles.deltaUp}>{metric.delta}</span>
         </div>
         <div className={styles.kpiFoot}>
-          <span>vs previous period</span>
+          <span>{metric.context}</span>
           <Sparkline values={metric.sparkline} />
         </div>
       </div>
@@ -83,8 +86,9 @@ function KpiCard({ metric, index }: { metric: MetricCard; index: number }) {
 }
 
 function Donut({ value, label }: { value: number; label: string }) {
+  const safeValue = Math.min(100, Math.max(0, value));
   return (
-    <div className={styles.donut} style={{ "--value": `${Math.min(100, Math.max(0, value)) * 3.6}deg` } as React.CSSProperties}>
+    <div className={`${styles.donut}${safeValue === 0 ? ` ${styles.emptyDonut}` : ""}`} style={{ "--value": `${safeValue * 3.6}deg` } as React.CSSProperties}>
       <div>
         <strong>{label}</strong>
         <span>Total</span>
@@ -94,6 +98,7 @@ function Donut({ value, label }: { value: number; label: string }) {
 }
 
 function LineChart({ data }: { data: ExecutiveDashboardData["throughput"] }) {
+  if (!data.labels.length) return <EmptyState>No throughput records exist for the selected period.</EmptyState>;
   const width = 600;
   const height = 190;
   const all = [...data.created, ...data.completed, ...data.published, ...data.failed];
@@ -130,8 +135,69 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   return <div className={styles.emptyState}>{children}</div>;
 }
 
-export function ExecutiveDashboard({ data }: { data: ExecutiveDashboardData }) {
+export function ExecutiveDashboard({ data: initialData }: { data: ExecutiveDashboardData }) {
+  const [data, setData] = useState(initialData);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const portfolioTotal = data.portfolio.reduce((sum, item) => sum + item.value, 0);
+  const pipelineTotal = data.pipeline.reduce((sum, item) => sum + item.count, 0);
+  const completedTotal = data.portfolio.filter((item) => ["Completed", "Published"].includes(item.label)).reduce((sum, item) => sum + item.value, 0);
+  const inProgressPercent = pipelineTotal ? Math.round(data.platform.activeProductions / pipelineTotal * 100) : 0;
+  const completedPercent = pipelineTotal ? Math.round(completedTotal / pipelineTotal * 100) : 0;
+  const agentActivePercent = data.agents.total ? Math.round(data.agents.active / data.agents.total * 100) : 0;
+  const qualityRiskPercent = data.quality.totalIssues ? Math.round((data.quality.critical + data.quality.high) / data.quality.totalIssues * 100) : 0;
+
+  const searchResults = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return [];
+    return [
+      ...data.metrics.map((item) => ({ label: item.label, detail: item.value, href: "#executive-metrics" })),
+      ...data.pipeline.map((item) => ({ label: item.label, detail: `${item.count} productions`, href: "#production-pipeline-summary" })),
+      ...data.activity.map((item) => ({ label: item.title, detail: item.subtitle, href: "#recent-executive-activity" })),
+      ...data.systemHealth.map((item) => ({ label: item.service, detail: item.status, href: "#system-health-summary" }))
+    ].filter((item) => `${item.label} ${item.detail}`.toLowerCase().includes(query)).slice(0, 12);
+  }, [data, searchQuery]);
+
+  async function loadDashboard(filters: { workspace?: string; brand?: string; period?: number } = {}) {
+    setLoading(true);
+    setMessage("");
+    try {
+      const params = new URLSearchParams({
+        workspace: filters.workspace ?? data.filters.workspaceId,
+        period: String(filters.period ?? data.filters.periodDays)
+      });
+      const selectedBrand = filters.brand === undefined ? data.filters.brandId : filters.brand;
+      if (selectedBrand) params.set("brand", selectedBrand);
+      const response = await fetch(`/api/dashboard/executive-dashboard?${params}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Unable to refresh the dashboard.");
+      setData(await response.json());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to refresh the dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function runAction(action: "start" | "pause" | "stop") {
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/dashboard/executive-dashboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, workspaceId: data.filters.workspaceId })
+      });
+      if (!response.ok) throw new Error(`Unable to ${action} autonomous operations.`);
+      setData(await response.json());
+      setMessage(`Autonomous operations ${action === "start" ? "started" : action === "pause" ? "paused" : "stopped"}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The platform action failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <section className={styles.page} aria-labelledby="executive-dashboard-title">
@@ -144,26 +210,46 @@ export function ExecutiveDashboard({ data }: { data: ExecutiveDashboardData }) {
           <p>Monitor autonomous production, content performance, AI activity, publishing readiness, operational risks, and overall platform health.</p>
         </div>
         <div className={styles.headerActions}>
-          <div className={styles.selectButton}>Workspace <strong>CACSMS Studio</strong></div>
-          <div className={styles.selectButton}>Brand <strong>CACSMS</strong></div>
-          <div className={styles.selectButton}>Current period <strong>{new Date(data.generatedAt).toLocaleDateString()}</strong></div>
-          <Link className={styles.iconButton} href="/dashboard/executive-dashboard" aria-label="Refresh">
+          <label className={styles.selectButton}>Workspace
+            <select value={data.filters.workspaceId} onChange={(event) => void loadDashboard({ workspace: event.target.value, brand: "" })} disabled={loading}>
+              {data.filters.workspaces.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className={styles.selectButton}>Brand
+            <select value={data.filters.brandId ?? ""} onChange={(event) => void loadDashboard({ brand: event.target.value })} disabled={loading}>
+              <option value="">All brands</option>
+              {data.filters.brands.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className={styles.selectButton}>Current period
+            <select value={data.filters.periodDays} onChange={(event) => void loadDashboard({ period: Number(event.target.value) })} disabled={loading}>
+              <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+            </select>
+          </label>
+          <button className={styles.iconButton} type="button" onClick={() => void loadDashboard()} aria-label="Refresh" disabled={loading}>
             <RefreshCw size={17} aria-hidden="true" />
-          </Link>
-          <Link className={styles.iconButton} href="/dashboard/my-workspace" aria-label="Search">
+          </button>
+          <button className={styles.iconButton} type="button" onClick={() => setSearchOpen((open) => !open)} aria-label="Search dashboard">
             <Search size={17} aria-hidden="true" />
-          </Link>
+          </button>
+          {searchOpen ? <div className={styles.searchBox}>
+            <Search size={16} aria-hidden="true" />
+            <input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search metrics, stages, activity, or services…" />
+            {searchQuery ? <div className={styles.searchResults}>{searchResults.length ? searchResults.map((item, index) => <a href={item.href} key={`${item.label}-${index}`} onClick={() => setSearchOpen(false)}><strong>{item.label}</strong><span>{item.detail}</span></a>) : <span>No dashboard matches found.</span>}</div> : null}
+          </div> : null}
         </div>
       </header>
 
+      {message ? <div className={styles.feedback} role="status">{message}</div> : null}
+
       <section className={styles.commandBar} aria-label="Executive command summary">
         <div className={styles.commandCell}>
-          <span className={styles.statusPill}>{data.platform.status}</span>
+          <span className={styles.statusPill} data-status={data.platform.status}>{data.platform.status}</span>
           <small>Platform Status</small>
         </div>
-        <div className={styles.commandCell}><small>Autonomous Mode</small><strong>{data.platform.autonomousMode}</strong></div>
-        <div className={styles.commandCell}><small>Current Operation</small><strong>{data.platform.currentOperation}</strong></div>
-        <div className={styles.commandCell}><small>Current Stage</small><strong>{data.platform.currentStage}</strong><div className={styles.progress}><span style={{ width: "100%" }} /></div></div>
+        <div className={styles.commandCell}><small>Autonomous Mode</small><strong title={data.platform.autonomousMode}>{data.platform.autonomousMode}</strong></div>
+        <div className={styles.commandCell}><small>Current Operation</small><strong title={data.platform.currentOperation}>{data.platform.currentOperation}</strong></div>
+        <div className={styles.commandCell}><small>Current Stage</small><strong title={data.platform.currentStage}>{data.platform.currentStage}</strong><div className={styles.progress}><span style={{ width: `${data.platform.stageProgressPercent}%` }} /></div></div>
         <div className={styles.commandStat}><strong>{data.platform.stageProgress}</strong></div>
         {[
           ["Active Productions", data.platform.activeProductions],
@@ -180,13 +266,13 @@ export function ExecutiveDashboard({ data }: { data: ExecutiveDashboardData }) {
         ))}
         <div className={styles.commandStat}><small>Last Health Check</small><strong>{data.platform.lastHealthCheck}</strong></div>
         <div className={styles.runActions}>
-          <button className={styles.startButton} type="button"><Play size={14} aria-hidden="true" />Start</button>
-          <button className={styles.pauseButton} type="button"><Pause size={14} aria-hidden="true" />Pause</button>
-          <button className={styles.stopButton} type="button"><Square size={13} aria-hidden="true" />Stop</button>
+          <button className={styles.startButton} type="button" onClick={() => void runAction("start")} disabled={loading || data.platform.status === "Running"}><Play size={14} aria-hidden="true" />Start</button>
+          <button className={styles.pauseButton} type="button" onClick={() => void runAction("pause")} disabled={loading || data.platform.status === "Paused"}><Pause size={14} aria-hidden="true" />Pause</button>
+          <button className={styles.stopButton} type="button" onClick={() => void runAction("stop")} disabled={loading || data.platform.status === "Stopped"}><Square size={13} aria-hidden="true" />Stop</button>
         </div>
       </section>
 
-      <section className={styles.kpiGrid} aria-label="Executive metrics">
+      <section className={styles.kpiGrid} id="executive-metrics" aria-label="Executive metrics">
         {data.metrics.map((metric, index) => <KpiCard key={metric.key} metric={metric} index={index} />)}
       </section>
 
@@ -194,15 +280,14 @@ export function ExecutiveDashboard({ data }: { data: ExecutiveDashboardData }) {
         <article className={styles.panel}>
           <div className={styles.panelHeader}><h2>Production Portfolio Overview</h2></div>
           <div className={styles.portfolioBody}>
-            <div className={styles.legendList}>{data.portfolio.map((item) => <div key={item.label}><span className={styles.legendDot} /><span>{item.label}</span><strong>{item.value}</strong><small>{item.percent}%</small></div>)}</div>
-            <Donut value={portfolioTotal ? 74 : 0} label={String(portfolioTotal)} />
+            {data.portfolio.length ? <><div className={styles.legendList}>{data.portfolio.map((item) => <div key={item.label}><span className={styles.legendDot} /><span>{item.label}</span><strong>{item.value}</strong><small>{item.percent}%</small></div>)}</div><Donut value={portfolioTotal ? 100 : 0} label={String(portfolioTotal)} /></> : <EmptyState>No productions exist for the selected workspace and brand.</EmptyState>}
           </div>
         </article>
 
-        <article className={`${styles.panel} ${styles.widePanel}`}>
-          <div className={styles.panelHeader}><h2>Production Pipeline</h2><PanelAction href="/dashboard/production-pipeline">View Pipeline</PanelAction></div>
+        <article className={`${styles.panel} ${styles.widePanel}`} id="production-pipeline-summary">
+          <div className={styles.panelHeader}><h2>Production Pipeline</h2><PanelAction href="/production-pipeline/index.html">View Pipeline</PanelAction></div>
           <div className={styles.pipeline}>{data.pipeline.map((stage, index) => <div className={styles.pipelineStage} key={stage.key}><div className={styles.pipelineIcon}>{index + 1}</div><strong>{stage.label}</strong><span>{stage.count}</span><small>{stage.atRisk} at risk</small></div>)}</div>
-          <div className={styles.pipelineBars}><div><span>In Progress</span><div><i style={{ width: "0%" }} /></div><strong>0 (0%)</strong></div><div><span>Completed</span><div><i style={{ width: "0%" }} /></div><strong>0 (0%)</strong></div></div>
+          <div className={styles.pipelineBars}><div><span>In Progress</span><div><i style={{ width: `${inProgressPercent}%` }} /></div><strong>{data.platform.activeProductions} ({inProgressPercent}%)</strong></div><div><span>Completed</span><div><i style={{ width: `${completedPercent}%` }} /></div><strong>{completedTotal} ({completedPercent}%)</strong></div></div>
         </article>
 
         <article className={styles.panel}>
@@ -214,7 +299,7 @@ export function ExecutiveDashboard({ data }: { data: ExecutiveDashboardData }) {
         <article className={styles.panel}>
           <div className={styles.panelHeader}><h2>AI Agent Overview</h2><PanelAction href="/agents">View All</PanelAction></div>
           <div className={styles.agentBody}>
-            <Donut value={data.agents.total ? 75 : 0} label={String(data.agents.total)} />
+            <Donut value={agentActivePercent} label={String(data.agents.total)} />
             <div className={styles.miniTable}>
               {data.agents.top.length ? data.agents.top.map((agent) => <div key={agent.name}><strong>{agent.name}</strong><span>{agent.role}</span><em>{agent.status}</em><small>{agent.successRate}</small></div>) : <EmptyState>No active agents yet.</EmptyState>}
             </div>
@@ -226,12 +311,13 @@ export function ExecutiveDashboard({ data }: { data: ExecutiveDashboardData }) {
           <div className={styles.table}>
             <div className={styles.tableHead}><span>Channel</span><span>Status</span><span>Scheduled</span><span>Ready</span><span>Failed</span><span>Last Published</span><span>Next Publish</span></div>
             {data.publishing.map((row) => <div className={styles.tableRow} key={row.channel}><span><ChannelIcon channel={row.channel} />{row.channel}</span><span><b className={styles.emptyPill}>{row.status}</b></span><span>{row.scheduled}</span><span>{row.ready}</span><span>{row.failed}</span><span>{row.lastPublished}</span><span>{row.nextPublish}</span></div>)}
+            {!data.publishing.length ? <EmptyState>No publishing jobs exist for the selected filters.</EmptyState> : null}
           </div>
         </article>
 
         <article className={styles.panel}>
           <div className={styles.panelHeader}><h2>Quality & Risk Overview</h2><PanelAction href="/quality">View All</PanelAction></div>
-          <div className={styles.qualityBody}><Donut value={0} label={String(data.quality.totalIssues)} /><div className={styles.scoreList}>{data.quality.areas.map((area) => <div key={area.label}><span>{area.label}</span><strong>{area.score}%</strong></div>)}</div></div>
+          <div className={styles.qualityBody}><Donut value={qualityRiskPercent} label={String(data.quality.totalIssues)} />{data.quality.totalIssues ? <div className={styles.scoreList}><div><span>Critical</span><strong>{data.quality.critical}</strong></div><div><span>High</span><strong>{data.quality.high}</strong></div><div><span>Other</span><strong>{Math.max(0, data.quality.totalIssues - data.quality.critical - data.quality.high)}</strong></div></div> : <EmptyState>No quality or compliance issues detected.</EmptyState>}</div>
         </article>
 
         <article className={styles.panel}>
@@ -248,12 +334,12 @@ export function ExecutiveDashboard({ data }: { data: ExecutiveDashboardData }) {
           </div>
         </article>
 
-        <article className={styles.panel}>
+        <article className={styles.panel} id="recent-executive-activity">
           <div className={styles.panelHeader}><h2>Recent Executive Activity</h2></div>
-          <div className={styles.activityList}>{data.activity.map((item, index) => <div key={`${item.title}-${index}`}><span className={`${styles.activityIcon} ${toneClass(item.tone)}`}><Clock3 size={14} aria-hidden="true" /></span><div><strong>{item.title}</strong><small>{item.subtitle}</small></div><time>{item.time}</time></div>)}</div>
+          <div className={styles.activityList}>{data.activity.map((item, index) => <div key={`${item.title}-${index}`}><span className={`${styles.activityIcon} ${toneClass(item.tone)}`}><Clock3 size={14} aria-hidden="true" /></span><div><strong>{item.title}</strong><small>{item.subtitle}</small></div><time>{item.time}</time></div>)}{!data.activity.length ? <EmptyState>No executive activity has been recorded yet.</EmptyState> : null}</div>
         </article>
 
-        <article className={styles.panel}>
+        <article className={styles.panel} id="system-health-summary">
           <div className={styles.panelHeader}><h2>System Health Summary</h2><PanelAction href="/dashboard/system-health">View All</PanelAction></div>
           <div className={styles.healthList}>{data.systemHealth.map((item) => <div key={item.service}><span>{item.service}</span><b>{item.status}</b></div>)}</div>
         </article>

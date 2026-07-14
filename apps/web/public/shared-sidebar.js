@@ -103,8 +103,8 @@
     if (parent === "Production Pipeline" && child === "Pipeline Overview") return "/production-pipeline#pipeline-overview";
     if (parent === "Production Pipeline" && child === "Schedule") return "/production-pipeline#schedule";
     if (parent === "Production Pipeline" && child === "AI Insights") return "/production-pipeline#ai-insights";
-    if (child === "Production Pipeline") return "/production-pipeline";
-    if (child === "Production Workflow") return "/production-workflow";
+    if (child === "Production Pipeline") return "/production-pipeline/index.html";
+    if (child === "Production Workflow") return "/production-workflow/index.html";
     if (parent === "Opportunity Intelligence" && child === "Opportunity Dashboard") return "/opportunity-intelligence";
     if (parent === "Opportunity Intelligence" && child === "Executive Recommendations") return "/opportunity-intelligence/executive-recommendations";
     if (parent === "Opportunity Intelligence" && child === "Opportunity Portfolio") return "/opportunity-intelligence/opportunity-portfolio";
