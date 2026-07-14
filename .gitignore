@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 logs/
+infrastructure/deployment/iis/.tools/
 migration.env.local
 .turbo/
 .env

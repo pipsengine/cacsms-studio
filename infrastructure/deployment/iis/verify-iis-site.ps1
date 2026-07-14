@@ -14,21 +14,32 @@ if ($service.Status -ne "Running") {
   throw "Windows service '$ServiceName' is $($service.Status), not Running."
 }
 
+function Test-ApplicationHealth {
+  param($HealthResponse)
+
+  return $HealthResponse -and $HealthResponse.service -eq "cacsms-studio" -and $HealthResponse.status -in @("ok", "degraded")
+}
+
 $internalResponse = Invoke-RestMethod -Uri $InternalUrl -Method Get -TimeoutSec 20
-if ($internalResponse.status -ne "ok") {
+if (-not (Test-ApplicationHealth -HealthResponse $internalResponse)) {
   throw "Node health check failed for $InternalUrl"
 }
 
 $publicResponse = Invoke-RestMethod -Uri $PublicUrl -Method Get -TimeoutSec 20
-if ($publicResponse.status -ne "ok") {
+if (-not (Test-ApplicationHealth -HealthResponse $publicResponse)) {
   throw "IIS health check failed for $PublicUrl"
 }
 
 Write-Host "CACSMS Studio service and IIS health checks passed."
+if ($publicResponse.status -eq "degraded") {
+  Write-Warning "CACSMS Studio is reachable but reports degraded health: $($publicResponse.database.message)"
+}
 [pscustomobject]@{
   service = $ServiceName
   serviceStatus = $service.Status.ToString()
   internalUrl = $InternalUrl
   publicUrl = $PublicUrl
   status = $publicResponse.status
+  databaseStatus = $publicResponse.database.status
+  databaseMessage = $publicResponse.database.message
 } | ConvertTo-Json -Depth 5

@@ -4,6 +4,8 @@ const path = require("node:path");
 const { createRequire } = require("node:module");
 
 const webDir = path.join(__dirname, "apps", "web");
+loadWebEnvironment(webDir);
+
 const pipelineDir = path.join(webDir, "public", "production-pipeline");
 const pipelineIndexPath = path.join(pipelineDir, "index.html");
 const pipelineStylesPath = path.join(pipelineDir, "styles.css");
@@ -28,6 +30,36 @@ try {
   next = webRequire("next");
 } catch (error) {
   console.warn("Next.js is not available. Starting CACSMS Studio fallback runtime.");
+}
+
+function loadWebEnvironment(directory) {
+  const merged = {};
+  for (const fileName of [".env", ".env.production", ".env.local"]) {
+    const filePath = path.join(directory, fileName);
+    if (!fs.existsSync(filePath)) continue;
+
+    const content = fs.readFileSync(filePath, "utf8");
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+
+      const equalsIndex = trimmed.indexOf("=");
+      if (equalsIndex <= 0) continue;
+
+      const key = trimmed.slice(0, equalsIndex).trim();
+      let value = trimmed.slice(equalsIndex + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      merged[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(merged)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
 }
 
 if (next) {

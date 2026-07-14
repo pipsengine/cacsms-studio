@@ -42,6 +42,71 @@ const validPeriod = (value?: number) => [7, 30, 90].includes(Number(value)) ? Nu
 const money = (value: number) => new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 2 }).format(value);
 const displayStatus = (value: string) => value.replace(/(^|-)([a-z])/g, (_, separator, letter) => `${separator ? " " : ""}${letter.toUpperCase()}`);
 
+function fallbackExecutiveDashboardData(generatedAt: string, health: Awaited<ReturnType<typeof getDatabaseHealth>>, periodDays: number): ExecutiveDashboardData {
+  const metrics: MetricCard[] = metricLabels.map((label, index) => ({
+    key: label.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    label,
+    value: index === 11 ? "0%" : index === 10 ? money(0) : "0",
+    delta: "Offline",
+    deltaDirection: "flat",
+    tone: index === 11 ? "danger" : "neutral",
+    sparkline: [],
+    context: health.message
+  }));
+
+  return {
+    generatedAt,
+    filters: {
+      workspaceId: "offline",
+      brandId: null,
+      periodDays,
+      workspaces: [{ id: "offline", name: "CACSMS Studio" }],
+      brands: []
+    },
+    platform: {
+      status: "Degraded",
+      autonomousMode: "Database unavailable",
+      currentOperation: "Waiting for MSSQL configuration",
+      currentStage: "Runtime online",
+      stageProgress: "0 of 13 active stages",
+      stageProgressPercent: 0,
+      activeProductions: 0,
+      runningWorkflows: 0,
+      activeAgents: 0,
+      renderingJobs: 0,
+      publishingJobs: 0,
+      criticalExceptions: 1,
+      lastHealthCheck: new Date(health.checkedAt).toLocaleTimeString()
+    },
+    metrics,
+    portfolio: [],
+    pipeline: productionPipeline.map((stage) => ({ key: stage.id, label: stage.label, count: 0, atRisk: 0 })),
+    throughput: { labels: [], created: [], completed: [], published: [], failed: [] },
+    agents: { total: 0, active: 0, idle: 0, busy: 0, degraded: 0, failed: 0, top: [] },
+    publishing: [],
+    quality: { totalIssues: 1, critical: 0, high: 1, medium: 0, low: 0, info: 0, areas: [] },
+    deadlines: { overdue: 0, dueToday: 0, dueThisWeek: 0, dueNextWeek: 0, estimatedCost: money(0), budgetUtilization: 0, costTrend: [] },
+    exceptions: [{
+      severity: "High",
+      category: "Database",
+      description: health.message,
+      affected: health.database,
+      firstDetected: new Date(health.checkedAt).toLocaleString(),
+      status: "Open"
+    }],
+    activity: [{
+      title: "Dashboard loaded in offline mode",
+      subtitle: health.message,
+      time: new Date(health.checkedAt).toLocaleString(),
+      tone: "warning"
+    }],
+    systemHealth: [
+      { service: "Microsoft SQL Server", status: "Offline" },
+      { service: "Next.js Runtime", status: "Operational" }
+    ]
+  };
+}
+
 export async function setExecutivePlatformState(action: "start" | "pause" | "stop", workspaceId?: string) {
   const pool = await getMssqlPool();
   const workspace = await resolveWorkspace(pool, workspaceId);
@@ -62,10 +127,14 @@ async function resolveWorkspace(pool: Awaited<ReturnType<typeof getMssqlPool>>, 
 
 export async function getExecutiveDashboardData(query: ExecutiveDashboardQuery = {}): Promise<ExecutiveDashboardData> {
   const generatedAt = new Date().toISOString();
-  const pool = await getMssqlPool();
   const health = await getDatabaseHealth();
-  const workspace = await resolveWorkspace(pool, query.workspaceId);
   const periodDays = validPeriod(query.periodDays);
+  if (health.status !== "connected") {
+    return fallbackExecutiveDashboardData(generatedAt, health, periodDays);
+  }
+
+  const pool = await getMssqlPool();
+  const workspace = await resolveWorkspace(pool, query.workspaceId);
 
   const brandResult = await pool.request().input("workspace", sql.UniqueIdentifier, workspace.id)
     .query<{ BrandId: string; Name: string }>(`SELECT BrandId, Name FROM cacsms.Brands WHERE WorkspaceId=@workspace AND IsActive=1 ORDER BY Name;`);

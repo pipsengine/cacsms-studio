@@ -12,6 +12,7 @@
     "start:iis-node": "set NODE_ENV=production&& set PORT=3018&& set CACSMS_PUBLIC_PORT=3008&& node server.js",
     "start:web": "pnpm --filter @cacsms/web start",
     "iis:install": "powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-iis-site.ps1",
+    "iis:install-nssm": "powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-nssm.ps1",
     "iis:verify": "powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/verify-iis-site.ps1",
     "db:verify": "powershell -ExecutionPolicy Bypass -File infrastructure/database/verify-mssql-connection.ps1",
     "db:migrate": "powershell -ExecutionPolicy Bypass -File infrastructure/database/migrate-mssql.ps1",

@@ -7,7 +7,7 @@ CACSMS Studio is configured for IIS hosting on port `3008`.
 - Windows Server with IIS enabled
 - Node.js 20 or newer
 - pnpm 9.15.4
-- NSSM (the Non-Sucking Service Manager) available on `PATH`
+- NSSM (the Non-Sucking Service Manager), either available on `PATH` or staged with `install-nssm.ps1`
 - IIS URL Rewrite module
 - IIS Application Request Routing with proxy enabled
 
@@ -46,6 +46,19 @@ Run PowerShell as Administrator:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-node-windows-service.ps1
+```
+
+If NSSM is not installed yet, stage it first:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-nssm.ps1
+powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-node-windows-service.ps1
+```
+
+Do not use the sample placeholder path `C:\path\to\nssm.exe`. If NSSM is in a custom location, pass the real full path:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-node-windows-service.ps1 -NssmPath "C:\Tools\nssm\nssm.exe"
 ```
 
 Run the service installer from an elevated PowerShell session. It configures the

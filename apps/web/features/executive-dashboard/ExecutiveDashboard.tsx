@@ -327,7 +327,7 @@ export function ExecutiveDashboard({ data: initialData }: { data: ExecutiveDashb
         </article>
 
         <article className={`${styles.panel} ${styles.widePanel}`}>
-          <div className={styles.panelHeader}><h2>Operational Exceptions</h2><PanelAction href="/dashboard/system-health">View All</PanelAction></div>
+          <div className={styles.panelHeader}><h2>Operational Exceptions</h2><PanelAction href="/home/system-health">View All</PanelAction></div>
           <div className={`${styles.table} ${styles.exceptionTable}`}>
             <div className={styles.tableHead}><span>Severity</span><span>Category</span><span>Description</span><span>Affected</span><span>First Detected</span><span>Status</span></div>
             {data.exceptions.length ? data.exceptions.map((row, index) => <div className={styles.tableRow} key={`${row.affected}-${index}`}><span><b className={styles.severity}>{row.severity}</b></span><span>{row.category}</span><span>{row.description}</span><span>{row.affected}</span><span>{row.firstDetected}</span><span><b className={styles.open}>{row.status}</b></span></div>) : <EmptyState>No operational exceptions detected.</EmptyState>}
@@ -340,7 +340,7 @@ export function ExecutiveDashboard({ data: initialData }: { data: ExecutiveDashb
         </article>
 
         <article className={styles.panel} id="system-health-summary">
-          <div className={styles.panelHeader}><h2>System Health Summary</h2><PanelAction href="/dashboard/system-health">View All</PanelAction></div>
+          <div className={styles.panelHeader}><h2>System Health Summary</h2><PanelAction href="/home/system-health">View All</PanelAction></div>
           <div className={styles.healthList}>{data.systemHealth.map((item) => <div key={item.service}><span>{item.service}</span><b>{item.status}</b></div>)}</div>
         </article>
       </section>

@@ -278,7 +278,7 @@ function QuickActions() {
     { label: "Upload Media", icon: Upload, href: "/assets" },
     { label: "Create Script", icon: FileText, href: "/writing/script-generator" },
     { label: "Schedule Publish", icon: CalendarDays, href: "/publishing/scheduler" },
-    { label: "AI Research", icon: WandSparkles, href: "/intelligence/research-workspace" },
+    { label: "AI Research", icon: WandSparkles, href: "/content-intelligence/research-workspace" },
     { label: "View Reports", icon: Activity, href: "/analytics" }
   ];
 

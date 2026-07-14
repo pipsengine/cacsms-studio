@@ -29,14 +29,48 @@ if (-not $nodePath) {
   throw "node.exe was not found on PATH. Install Node.js 20 or newer before continuing."
 }
 
-if (-not $NssmPath) {
+function Resolve-NssmPath {
+  param([string]$RequestedPath)
+
+  if ($RequestedPath -and $RequestedPath -like "C:\path\to\*") {
+    throw "'$RequestedPath' is a placeholder path. Run infrastructure\deployment\iis\install-nssm.ps1 first, then pass the real nssm.exe path it prints."
+  }
+
+  if ($RequestedPath) {
+    if (Test-Path $RequestedPath) {
+      return (Resolve-Path $RequestedPath).Path
+    }
+    return ""
+  }
+
   $nssmCommand = Get-Command nssm.exe -ErrorAction SilentlyContinue
   if ($nssmCommand) {
-    $NssmPath = $nssmCommand.Source
+    return $nssmCommand.Source
   }
+
+  $candidates = @(
+    (Join-Path $PSScriptRoot ".tools\nssm\nssm.exe"),
+    (Join-Path $PSScriptRoot ".tools\nssm.exe"),
+    "C:\Tools\nssm\nssm.exe",
+    "C:\nssm\nwin64\nssm.exe",
+    "C:\nssm\nssm.exe"
+  )
+
+  foreach ($candidate in $candidates) {
+    if (Test-Path $candidate) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  return ""
 }
+
+$NssmPath = Resolve-NssmPath -RequestedPath $NssmPath
 if (-not $NssmPath -or -not (Test-Path $NssmPath)) {
-  throw "NSSM was not found. Install NSSM or pass its full path with -NssmPath."
+  throw "NSSM was not found. Run 'powershell -ExecutionPolicy Bypass -File infrastructure\deployment\iis\install-nssm.ps1', then rerun this installer."
+}
+if ([System.IO.Path]::GetFileName($NssmPath) -ne "nssm.exe") {
+  throw "NssmPath must point to nssm.exe. Current value: $NssmPath"
 }
 
 $logPath = Join-Path $RootPath "logs"
@@ -49,6 +83,12 @@ function Invoke-Nssm {
   if ($LASTEXITCODE -ne 0) {
     throw "NSSM command failed (exit code $LASTEXITCODE): $($Arguments -join ' ')"
   }
+}
+
+function Test-ApplicationHealth {
+  param($HealthResponse)
+
+  return $HealthResponse -and $HealthResponse.service -eq "cacsms-studio" -and $HealthResponse.status -in @("ok", "degraded")
 }
 
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -100,11 +140,14 @@ do {
     $health = $null
     Start-Sleep -Seconds 1
   }
-} until ($health.status -eq "ok" -or (Get-Date) -ge $deadline)
+} until ((Test-ApplicationHealth -HealthResponse $health) -or (Get-Date) -ge $deadline)
 
-if ($health.status -ne "ok") {
+if (-not (Test-ApplicationHealth -HealthResponse $health)) {
   throw "Service '$ServiceName' started but its health endpoint did not become ready on port $InternalPort. Check $logPath."
 }
 
 Write-Host "Windows service '$ServiceName' is running on internal port $InternalPort."
+if ($health.status -eq "degraded") {
+  Write-Warning "CACSMS Studio is reachable but reports degraded health: $($health.database.message)"
+}
 Write-Host "IIS should expose the app publicly on port $PublicPort."
