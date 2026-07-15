@@ -1,30 +1,299 @@
 "use client";
 
-import {Bell, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, Filter, Globe2, Grid2X2, Languages, Lightbulb, LineChart, List, MoreHorizontal, RefreshCw, Search, Sparkles, Star, Target, TrendingUp, Zap} from "lucide-react";
-import {useMemo,useState,type ComponentType} from "react";
+import {
+  Bell,
+  CheckCircle2,
+  Clock3,
+  DatabaseZap,
+  Globe2,
+  Layers3,
+  LineChart,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Target,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
+import {useCallback, useEffect, useMemo, useState, type ComponentType} from "react";
 import styles from "./TopicDiscoveryPage.module.css";
 
-type Tone="violet"|"green"|"blue"|"red"|"amber";
-const metrics:[string,string,string,Tone,ComponentType<{size?:number}>][]=[
- ["2,418","Topics Scanned","+12.4%","violet",Search],["184","High-Potential","27 new today","green",TrendingUp],["+32%","Demand Growth","vs. previous period","blue",LineChart],["46","Breakout Signals","Across 7 categories","red",Zap],["92","Ready for Production","18 priority topics","amber",Star]
+type Tone = "violet" | "green" | "blue" | "red" | "amber";
+type ApiMetric = {value: string; label: string; tone: Tone};
+type ApiRecord = {
+  id: string;
+  title: string;
+  subtitle: string;
+  category: string;
+  score: number;
+  status: string;
+  attributes: Record<string, unknown>;
+  updatedAt: string;
+};
+type ApiData = {records: ApiRecord[]; metrics: ApiMetric[]; updatedAt: string | null};
+type TopicRow = {
+  id: string;
+  name: string;
+  category: string;
+  demand: string;
+  bars: number;
+  velocity: string;
+  competition: string;
+  fit: number;
+  score: number;
+  status: string;
+  tone: Tone;
+  sourceMix: string;
+};
+
+const metricIcons: ComponentType<{size?: number}>[] = [Search, TrendingUp, LineChart, DatabaseZap, Star];
+const fallbackMetrics: ApiMetric[] = [
+  {value: "--", label: "Topics monitored", tone: "violet"},
+  {value: "--", label: "High confidence", tone: "green"},
+  {value: "--", label: "Average score", tone: "blue"},
+  {value: "--", label: "Autonomous actions", tone: "amber"},
 ];
-const topics=[
- {name:"AI Agents Transforming African Manufacturing",category:"Technology · Industry 4.0",demand:"Very High",bars:8,velocity:"+184%",competition:"Low",fit:96,score:94,status:"High potential",tone:"violet"},
- {name:"Why Smart Factories Fail Before They Scale",category:"Business · Automation",demand:"High",bars:6,velocity:"+92%",competition:"Medium",fit:93,score:91,status:"Rising",tone:"violet"},
- {name:"The Hidden Cost of Manual Operations",category:"Digital Transformation",demand:"High",bars:6,velocity:"+38%",competition:"Low",fit:89,score:88,status:"Evergreen",tone:"amber"},
- {name:"Digital Twins for Nigerian SMEs",category:"Emerging Technology",demand:"High",bars:6,velocity:"+71%",competition:"Very Low",fit:91,score:87,status:"Breakout",tone:"red"},
- {name:"Skills Machines Cannot Replace",category:"Future of Work",demand:"Very High",bars:8,velocity:"+56%",competition:"Medium",fit:95,score:86,status:"Trending",tone:"blue"},
- {name:"Industrial Cybersecurity in Seven Minutes",category:"Security · Explainer",demand:"Medium",bars:5,velocity:"+44%",competition:"Low",fit:87,score:83,status:"Quick win",tone:"blue"}
-] as const;
+const fallbackRows: TopicRow[] = [
+  {id: "fallback-1", name: "AI Agents Transforming African Manufacturing", category: "Technology - Industry 4.0", demand: "Very High", bars: 8, velocity: "+184%", competition: "Low", fit: 96, score: 94, status: "Auto-promoted", tone: "violet", sourceMix: "Search + social + industry"},
+  {id: "fallback-2", name: "Why Smart Factories Fail Before They Scale", category: "Business - Automation", demand: "High", bars: 6, velocity: "+92%", competition: "Medium", fit: 93, score: 91, status: "Production queued", tone: "violet", sourceMix: "Search + competitor + research"},
+];
 
-export function TopicDiscoveryPage(){const [tab,setTab]=useState("All Opportunities");const [query,setQuery]=useState("");const [refreshing,setRefreshing]=useState(false);const [view,setView]=useState<"list"|"grid">("list");const visible=useMemo(()=>topics.filter(item=>`${item.name} ${item.category}`.toLowerCase().includes(query.toLowerCase())),[query]);function refresh(){setRefreshing(true);window.setTimeout(()=>setRefreshing(false),600)}return <section className={styles.page}>
- <header className={styles.header}><div><div className={styles.crumb}>Content Intelligence <span>/</span> Topic Discovery</div><h1>Topic Discovery</h1><p>Discover high-potential topics using AI signals, search demand, audience interest, and strategic relevance.</p></div><div className={styles.selectors}><button>Workspace · CACSMS Studio<ChevronDown size={13}/></button><button>Brand · CACSMS<ChevronDown size={13}/></button><button aria-label="Notifications"><Bell size={15}/></button></div></header>
- <div className={styles.layout}><main><section className={styles.workspaceBar}><i><Sparkles size={23}/></i><div><b>Topic Discovery Workspace</b><small>Last intelligence update: {refreshing?"just now":"8 minutes ago"}</small></div><span><i/>12 sources monitoring</span><button onClick={refresh}><RefreshCw className={refreshing?styles.spin:""} size={14}/>Refresh</button><button className={styles.primary}><Target size={15}/></button></section><section className={styles.metrics}>{metrics.map(([value,label,note,tone,Icon])=><article data-tone={tone} key={label}><i><Icon size={25}/></i><div><strong>{value}</strong><span>{label}</span><small>{note}</small></div></article>)}</section>
-  <section className={styles.panel}><div className={styles.panelHead}><div><h2>Topic Opportunity Radar</h2><p>AI-ranked opportunities combining demand, velocity, competition, audience fit, and production readiness.</p></div><button><Download size={14}/>Export</button><button><MoreHorizontal size={17}/></button></div><nav className={styles.tabs}>{[["All Opportunities","184"],["Breakout",""],["Trending Now",""],["Evergreen",""],["Low Competition",""],["Saved",""]].map(([name,count])=><button className={tab===name?styles.active:""} onClick={()=>setTab(name)} key={name}>{name}{count?<b>{count}</b>:null}</button>)}</nav><div className={styles.tools}><label><Search size={14}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search topics, industries, signals, or keywords..."/></label><button><Filter size={14}/>Filter<b>4</b></button><button>Sort: Opportunity Score<ChevronDown size={13}/></button><span><button className={view==="list"?styles.selected:""} onClick={()=>setView("list")}><List size={15}/></button><button className={view==="grid"?styles.selected:""} onClick={()=>setView("grid")}><Grid2X2 size={15}/></button></span></div><div className={styles.table}><div className={styles.tableHead}><span>TOPIC / CATEGORY</span><span>DEMAND</span><span>TREND VELOCITY</span><span>COMPETITION</span><span>AUDIENCE FIT</span><span>OPPORTUNITY SCORE</span><span>STATUS</span><span/></div>{visible.map((item,index)=><article className={index===0?styles.highlight:""} key={item.name}><span><b>{item.name}</b><small>{item.category}</small></span><span><b>{item.demand}</b><i>{Array.from({length:8},(_,n)=><u data-on={n<item.bars} key={n}/>)}</i></span><strong>{item.velocity}</strong><em data-level={item.competition}>{item.competition}</em><span>{item.fit}%</span><span className={styles.score}><b>{item.score} / 100</b><i><u style={{width:`${item.score}%`}}/></i></span><em data-tone={item.tone}>{item.status}</em><span><button><Star size={14}/></button><button><MoreHorizontal size={15}/></button></span></article>)}</div><footer className={styles.pagination}><span>1–{visible.length} of 184</span><div><button><ChevronLeft size={13}/></button><button className={styles.current}>1</button><button>2</button><button>3</button><button>…</button><button>31</button><button><ChevronRight size={13}/></button></div><button>Show 25<ChevronDown size={12}/></button></footer></section>
- </main><aside><DiscoveryControls/><SignalComposition/><IntelligenceBrief/><Health/></aside></div></section>}
+function stringAttr(attributes: Record<string, unknown>, key: string, fallback: string) {
+  const value = attributes[key];
+  return typeof value === "string" ? value : fallback;
+}
 
-function DiscoveryControls(){const controls:[ComponentType<{size?:number}>,string,string][]=[[CalendarDays,"Research horizon","Last 30 days"],[Globe2,"Primary market","Nigeria + Global"],[Target,"Content objective","Authority growth"],[Languages,"Languages","English"],[Lightbulb,"Formats","All formats"]];return <section className={`${styles.panel} ${styles.controls}`}><h2>Discovery Controls</h2>{controls.map(([Icon,label,value])=><article key={label}><b>{label}</b><span><Icon size={13}/>{value}<ChevronDown size={12}/></span></article>)}<button>Advanced configuration <Arrow/></button></section>}
-function Arrow(){return <span>↗</span>}
-function SignalComposition(){return <section className={`${styles.panel} ${styles.composition}`}><h2>Signal Composition</h2>{[["Search demand",96,"violet"],["Social velocity",92,"violet"],["Audience fit",96,"violet"],["Competition advantage",88,"amber"],["Brand relevance",94,"violet"]].map(([label,value,tone])=><article key={label as string}><span>{label}</span><i><u data-tone={tone} style={{width:`${value}%`}}/></i><b>{value}</b></article>)}<small>Score out of 100</small></section>}
-function IntelligenceBrief(){return <section className={`${styles.panel} ${styles.brief}`}><div><h2><Sparkles size={16}/>AI Intelligence Brief</h2><b>Breakout opportunity</b></div><p>Agentic automation in African manufacturing is accelerating across search and professional networks with low documentary saturation.</p><strong>Recommended approach</strong><span><b>Documentary</b><b>8–12 min</b><b>YouTube + LinkedIn</b></span><button><Sparkles size={13}/>Create production brief</button></section>}
-function Health(){return <section className={`${styles.panel} ${styles.health}`}><h2>Intelligence Health</h2><div>{[["Source coverage",92],["Data freshness",98],["Confidence",94]].map(([label,value])=><article key={label as string}><span>{label}</span><b>{value}%</b><i><u style={{width:`${value}%`}}/></i></article>)}</div></section>}
+function numberAttr(attributes: Record<string, unknown>, key: string, fallback: number) {
+  const value = attributes[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function toneFor(status: string, score: number): Tone {
+  if (/breakout/i.test(status)) return "red";
+  if (/quick|watch|evergreen/i.test(status)) return "amber";
+  if (score >= 90) return "violet";
+  if (score >= 86) return "blue";
+  return "green";
+}
+
+function rowFromRecord(record: ApiRecord): TopicRow {
+  const velocity = numberAttr(record.attributes, "velocity", Math.max(24, record.score - 12));
+  const competition = stringAttr(record.attributes, "competition", record.score >= 90 ? "Low" : "Medium");
+  return {
+    id: record.id,
+    name: record.title,
+    category: record.subtitle || record.category,
+    demand: stringAttr(record.attributes, "demand", record.score >= 90 ? "Very High" : "High"),
+    bars: Math.max(3, Math.min(8, Math.round(record.score / 12))),
+    velocity: `+${velocity}%`,
+    competition,
+    fit: numberAttr(record.attributes, "audienceFit", Math.min(98, record.score + 2)),
+    score: record.score,
+    status: record.status,
+    tone: toneFor(record.status, record.score),
+    sourceMix: stringAttr(record.attributes, "sourceMix", "Autonomous signal fusion"),
+  };
+}
+
+function formatTime(value: string | null) {
+  if (!value) return "awaiting first autonomous sync";
+  return new Intl.DateTimeFormat("en-GB", {hour: "2-digit", minute: "2-digit", second: "2-digit"}).format(new Date(value));
+}
+
+export function TopicDiscoveryPage() {
+  const [data, setData] = useState<ApiData | null>(null);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch("/api/content-intelligence/topic-discovery", {cache: "no-store", signal});
+      const payload = (await response.json()) as ApiData | {message?: string};
+      if (!response.ok) throw new Error("message" in payload && payload.message ? payload.message : "Unable to load topic discovery data.");
+      setData(payload as ApiData);
+      setError(null);
+    } catch (cause) {
+      if ((cause as Error).name !== "AbortError") setError((cause as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    const timer = window.setInterval(() => void load(), 30000);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [load]);
+
+  const metrics = data?.metrics?.length ? data.metrics : fallbackMetrics;
+  const rows = useMemo(() => {
+    const source = data?.records?.length ? data.records.map(rowFromRecord) : fallbackRows;
+    const lowered = query.trim().toLowerCase();
+    if (!lowered) return source;
+    return source.filter((item) => `${item.name} ${item.category} ${item.status} ${item.sourceMix}`.toLowerCase().includes(lowered));
+  }, [data, query]);
+  const highPriority = rows.filter((row) => row.score >= 90).length;
+  const averageScore = rows.length ? Math.round(rows.reduce((sum, row) => sum + row.score, 0) / rows.length) : 0;
+
+  return (
+    <section className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <div className={styles.crumb}>Content Intelligence <span>/</span> Topic Discovery</div>
+          <h1>Topic Discovery</h1>
+          <p>Autonomously detects high-potential topics from market, search, audience, competitor, and production-readiness signals.</p>
+        </div>
+        <div className={styles.selectors}>
+          <button>Workspace - CACSMS Studio</button>
+          <button>Brand - CACSMS</button>
+          <button aria-label="Notifications"><Bell size={15}/></button>
+        </div>
+      </header>
+
+      <div className={styles.layout}>
+        <main>
+          <section className={styles.workspaceBar}>
+            <i><Sparkles size={23}/></i>
+            <div>
+              <b>Autonomous Topic Discovery Engine</b>
+              <small>Last autonomous update: {formatTime(data?.updatedAt ?? null)}</small>
+            </div>
+            <span><i/>12 sources monitored continuously</span>
+            <button><RefreshCw className={loading ? styles.spin : ""} size={14}/>Auto-sync 30s</button>
+            <button className={styles.primary}><ShieldCheck size={15}/>Autonomous</button>
+          </section>
+
+          {error ? <p className={styles.notice}>{error}</p> : null}
+
+          <section className={styles.metrics}>
+            {metrics.slice(0, 5).map(({value, label, tone}, index) => {
+              const Icon = metricIcons[index] ?? LineChart;
+              return (
+                <article data-tone={tone} key={label}>
+                  <i><Icon size={25}/></i>
+                  <div><strong>{value}</strong><span>{label}</span><small>{index === 0 ? "DB-backed" : "Live autonomy"}</small></div>
+                </article>
+              );
+            })}
+          </section>
+
+          <section className={styles.panel}>
+            <div className={styles.panelHead}>
+              <div>
+                <h2>Autonomous Topic Opportunity Radar</h2>
+                <p>AI-ranked opportunities are monitored, scored, briefed, and queued without manual triage.</p>
+              </div>
+              <button><Clock3 size={14}/>Live monitor</button>
+              <button><CheckCircle2 size={14}/>Auto-handoff enabled</button>
+            </div>
+            <div className={styles.tabs}>
+              {["All autonomous opportunities", `${highPriority} production-ready`, "Breakout detection", "Evergreen watch"].map((name, index) => <button className={index === 0 ? styles.active : ""} key={name}>{name}</button>)}
+            </div>
+            <div className={styles.tools}>
+              <label><Search size={14}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Observer search across autonomous decisions..."/></label>
+              <button><ShieldCheck size={14}/>Ranking locked</button>
+              <button><Zap size={14}/>Auto-briefing</button>
+              <button><Target size={14}/>Production queue</button>
+            </div>
+            <div className={styles.table}>
+              <div className={styles.tableHead}>
+                <span>TOPIC / CATEGORY</span><span>DEMAND</span><span>TREND VELOCITY</span><span>COMPETITION</span><span>AUDIENCE FIT</span><span>OPPORTUNITY SCORE</span><span>STATUS</span><span>HANDOFF</span>
+              </div>
+              {rows.map((item, index) => (
+                <article className={index === 0 ? styles.highlight : ""} key={item.id}>
+                  <span><b>{item.name}</b><small>{item.category}</small></span>
+                  <span><b>{item.demand}</b><i>{Array.from({length: 8}, (_, n) => <u data-on={n < item.bars} key={n}/>)}</i></span>
+                  <strong>{item.velocity}</strong>
+                  <em data-level={item.competition}>{item.competition}</em>
+                  <span>{item.fit}%</span>
+                  <span className={styles.score}><b>{item.score} / 100</b><i><u style={{width: `${item.score}%`}}/></i></span>
+                  <em data-tone={item.tone}>{item.status}</em>
+                  <span className={styles.handoff}><CheckCircle2 size={14}/>Auto</span>
+                </article>
+              ))}
+            </div>
+            <footer className={styles.pagination}>
+              <span>{rows.length} autonomous opportunities visible</span>
+              <div><button className={styles.current}>Live</button><button>Polling</button><button>DB</button></div>
+              <button>{averageScore}% avg score</button>
+            </footer>
+          </section>
+        </main>
+        <aside>
+          <AutonomousPolicy/>
+          <SignalComposition rows={rows}/>
+          <IntelligenceBrief rows={rows}/>
+          <Health updatedAt={data?.updatedAt ?? null}/>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function AutonomousPolicy() {
+  const controls: [ComponentType<{size?: number}>, string, string][] = [
+    [Clock3, "Research horizon", "Continuous rolling window"],
+    [Globe2, "Primary market", "Nigeria + Global"],
+    [Target, "Content objective", "Authority growth"],
+    [Layers3, "Format routing", "Auto-selected per topic"],
+    [ShieldCheck, "Human input", "Not required"],
+  ];
+  return (
+    <section className={`${styles.panel} ${styles.controls}`}>
+      <h2>Autonomy Policy</h2>
+      {controls.map(([Icon, label, value]) => <article key={label}><b>{label}</b><span><Icon size={13}/>{value}<CheckCircle2 size={12}/></span></article>)}
+      <button>Policy locked by autonomous production lifecycle</button>
+    </section>
+  );
+}
+
+function SignalComposition({rows}: {rows: TopicRow[]}) {
+  const average = rows.length ? Math.round(rows.reduce((sum, row) => sum + row.score, 0) / rows.length) : 0;
+  const fit = rows.length ? Math.round(rows.reduce((sum, row) => sum + row.fit, 0) / rows.length) : 0;
+  const composition: [string, number, Tone][] = [
+    ["Search demand", Math.min(98, average + 4), "violet"],
+    ["Social velocity", Math.min(96, average + 1), "violet"],
+    ["Audience fit", fit, "violet"],
+    ["Competition advantage", Math.max(72, average - 4), "amber"],
+    ["Brand relevance", Math.min(97, average + 3), "violet"],
+  ];
+  return (
+    <section className={`${styles.panel} ${styles.composition}`}>
+      <h2>Signal Composition</h2>
+      {composition.map(([label, value, tone]) => <article key={label}><span>{label}</span><i><u data-tone={tone} style={{width: `${value}%`}}/></i><b>{value}</b></article>)}
+      <small>Continuously recalculated from autonomous discovery records</small>
+    </section>
+  );
+}
+
+function IntelligenceBrief({rows}: {rows: TopicRow[]}) {
+  const top = rows[0];
+  return (
+    <section className={`${styles.panel} ${styles.brief}`}>
+      <div><h2><Sparkles size={16}/>Autonomous Intelligence Brief</h2><b>Generated</b></div>
+      <p>{top ? `${top.name} is the current leading opportunity, with ${top.sourceMix.toLowerCase()} supporting an automatic production handoff.` : "The engine is waiting for the first topic-discovery sync."}</p>
+      <strong>Current autonomous route</strong>
+      <span><b>Research pack</b><b>Script brief</b><b>Production queue</b></span>
+      <button><CheckCircle2 size={13}/>Production brief generated automatically</button>
+    </section>
+  );
+}
+
+function Health({updatedAt}: {updatedAt: string | null}) {
+  const freshness = updatedAt ? 98 : 30;
+  return (
+    <section className={`${styles.panel} ${styles.health}`}>
+      <h2>Autonomy Health</h2>
+      <div>
+        {[["Source coverage", 92], ["Data freshness", freshness], ["Confidence", 94]].map(([label, value]) => <article key={label as string}><span>{label}</span><b>{value}%</b><i><u style={{width: `${value}%`}}/></i></article>)}
+      </div>
+    </section>
+  );
+}

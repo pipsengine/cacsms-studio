@@ -46,6 +46,7 @@ import { getMyWorkspaceData } from "@/lib/my-workspace-data";
 import { ActiveProductionsPage } from "@/features/active-productions/ActiveProductionsPage";
 import { RecentProductionsPage } from "@/features/recent-productions/RecentProductionsPage";
 import { KnowledgeUniversePage } from "@/features/knowledge-universe/KnowledgeUniversePage";
+import { PredictionEnginePage } from "@/features/knowledge-universe/PredictionEnginePage";
 import { listKnowledgeRecords, type KnowledgeRecordType } from "@/lib/knowledge-universe-data";
 
 export async function ModuleWorkspace({
@@ -94,6 +95,9 @@ export async function ModuleWorkspace({
 
   if (module.slug === "knowledge-universe") {
     const slug = workspace?.slug ?? "executive-dashboard";
+    if (slug === "prediction-engine") {
+      return <PredictionEnginePage />;
+    }
     const typeByWorkspace: Partial<Record<string, KnowledgeRecordType>> = {
       "knowledge-graph": "entity",
       "knowledge-repository": "source",

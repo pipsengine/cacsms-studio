@@ -1,4 +1,3 @@
-import sql from "mssql";
 import { getMssqlPool } from "@/lib/database/mssql";
 import type { DiscoveryData, DiscoverySettings, OpportunityDashboardData, OpportunityRecord, OpportunitySignal } from "@/types/opportunity-intelligence";
 
@@ -12,6 +11,23 @@ type SignalRow = {
   SignalId: string; Subject: string; SourceMix: string; Velocity: number; Novelty: number; Durability: string;
   Relevance: number; SignalScore: number; State: string; IsWatchlisted: boolean; IsAnomaly: boolean;
 };
+type SettingsRow = {
+  ScanHorizonDays: number; PrimaryMarket: string; SignalSensitivity: number; MinimumConfidence: number;
+  IncludeWeakSignals: boolean; DetectAnomalies: boolean; CrossCheckCompetitors: boolean; LastScanAt: Date | null;
+};
+
+function text(value: string) {
+  return `N'${value.replace(/'/g, "''")}'`;
+}
+
+function guid(value: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) throw new Error("Invalid identifier.");
+  return `'${value}'`;
+}
+
+function int(value: number, min = 0, max = 100) {
+  return String(Math.max(min, Math.min(max, Math.round(Number(value) || 0))));
+}
 
 async function workspaceId() {
   const pool = await getMssqlPool();
@@ -34,12 +50,68 @@ function mapSignal(row: SignalRow): OpportunitySignal {
     watchlisted:Boolean(row.IsWatchlisted), anomaly:Boolean(row.IsAnomaly) };
 }
 
+function shouldScan(lastScanAt: Date | string | null | undefined) {
+  if (!lastScanAt) return true;
+  return Date.now() - new Date(lastScanAt).getTime() > 5 * 60 * 1000;
+}
+
+async function ensureDiscoverySettings(workspace: string) {
+  const pool = await getMssqlPool();
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT 1 FROM cacsms.OpportunitySettings WHERE WorkspaceId=${guid(workspace)})
+      INSERT cacsms.OpportunitySettings(WorkspaceId,ScanHorizonDays,PrimaryMarket,SignalSensitivity,MinimumConfidence,IncludeWeakSignals,DetectAnomalies,CrossCheckCompetitors,LastScanAt)
+      VALUES(${guid(workspace)},30,N'Nigeria + West Africa',86,70,1,1,1,NULL);`);
+}
+
+async function ensureDiscoverySignals(workspace: string) {
+  const pool = await getMssqlPool();
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT 1 FROM cacsms.OpportunitySignals WHERE WorkspaceId=${guid(workspace)})
+    BEGIN
+      INSERT cacsms.OpportunitySignals(WorkspaceId,Subject,SourceMix,Velocity,Novelty,Durability,Relevance,SignalScore,State,IsWatchlisted,IsAnomaly) VALUES
+        (${guid(workspace)},N'Industrial AI training demand in West Africa',N'Search + jobs + procurement',126,89,N'High',96,93,N'Accelerating',0,0),
+        (${guid(workspace)},N'Applied automation skills for Nigerian SMEs',N'Search + forums + learning signals',112,86,N'High',94,91,N'Breakout',0,1),
+        (${guid(workspace)},N'Digital twins for mid-market manufacturers',N'Industry media + tenders',92,84,N'Medium',90,88,N'Emerging',0,0),
+        (${guid(workspace)},N'Predictive maintenance literacy gap',N'Jobs + reports + social listening',78,82,N'High',88,86,N'Opportunity forming',1,0),
+        (${guid(workspace)},N'Local-language technical explainers',N'Social + search + comments',61,91,N'Medium',86,84,N'New',1,0);
+    END;`);
+}
+
+async function runAutonomousDiscoveryScan(workspace: string) {
+  const pool = await getMssqlPool();
+  const subject = `Autonomous signal: applied AI operations demand - ${new Date().toISOString().slice(0,16).replace("T"," ")}`;
+  await pool.request().query(`
+    INSERT cacsms.OpportunitySignals (WorkspaceId,Subject,SourceMix,Velocity,Novelty,Durability,Relevance,SignalScore,State,IsWatchlisted,IsAnomaly)
+    VALUES (${guid(workspace)},${text(subject)},N'Search + jobs + procurement + social',118,88,N'High',94,92,N'Auto-promoted',0,1);
+    UPDATE cacsms.OpportunitySettings SET LastScanAt=SYSUTCDATETIME(),SignalSensitivity=CASE WHEN SignalSensitivity<86 THEN 86 ELSE SignalSensitivity END,UpdatedAt=SYSUTCDATETIME() WHERE WorkspaceId=${guid(workspace)};`);
+}
+
+async function promoteAutonomousSignals(workspace: string) {
+  const pool = await getMssqlPool();
+  await pool.request().query(`
+    DECLARE @brand uniqueidentifier=(SELECT TOP(1) BrandId FROM cacsms.Brands WHERE WorkspaceId=${guid(workspace)} AND IsActive=1 ORDER BY CreatedAt);
+    INSERT cacsms.Opportunities(WorkspaceId,BrandId,SourceSignalId,Title,Subtitle,Category,EstimatedValue,Confidence,Timing,OwnerName,OpportunityScore,Status,MarketDemand,StrategicFit,ExecutionReadiness,CompetitiveWhitespace,IsHighPriority,IsAtRisk)
+    SELECT TOP(3) ${guid(workspace)},@brand,s.SignalId,s.Subject,N'Autonomously promoted by Discovery Engine',N'Discovery',24000000,s.Relevance,N'Act now',N'Autonomous Discovery Engine',s.SignalScore,N'Ready to validate',s.Relevance,88,74,s.Novelty,1,0
+    FROM cacsms.OpportunitySignals s
+    WHERE s.WorkspaceId=${guid(workspace)} AND s.SignalScore>=90 AND NOT EXISTS(SELECT 1 FROM cacsms.Opportunities o WHERE o.WorkspaceId=${guid(workspace)} AND o.SourceSignalId=s.SignalId)
+    ORDER BY s.SignalScore DESC, s.CreatedAt DESC;`);
+}
+
+async function ensureAutonomousDiscoveryState(workspace: string) {
+  const pool = await getMssqlPool();
+  await ensureDiscoverySettings(workspace);
+  await ensureDiscoverySignals(workspace);
+  const settings = await pool.request().query<SettingsRow>(`SELECT TOP(1) LastScanAt FROM cacsms.OpportunitySettings WHERE WorkspaceId=${guid(workspace)};`);
+  if (shouldScan(settings.recordset[0]?.LastScanAt)) await runAutonomousDiscoveryScan(workspace);
+  await promoteAutonomousSignals(workspace);
+}
+
 export async function getOpportunityDashboard(): Promise<OpportunityDashboardData> {
   const pool=await getMssqlPool(); const workspace=await workspaceId();
-  const result=await pool.request().input("workspace",sql.UniqueIdentifier,workspace).query<OpportunityRow>(`
+  const result=await pool.request().query<OpportunityRow>(`
     SELECT OpportunityId,Title,Subtitle,Category,EstimatedValue,Confidence,Timing,OwnerName,OpportunityScore,Status,
       MarketDemand,StrategicFit,ExecutionReadiness,CompetitiveWhitespace,IsHighPriority,IsAtRisk
-    FROM cacsms.Opportunities WHERE WorkspaceId=@workspace AND IsArchived=0 ORDER BY OpportunityScore DESC, CreatedAt DESC;`);
+    FROM cacsms.Opportunities WHERE WorkspaceId=${guid(workspace)} AND IsArchived=0 ORDER BY OpportunityScore DESC, CreatedAt DESC;`);
   const opportunities=result.recordset.map(mapOpportunity);
   const value=opportunities.reduce((sum,item)=>sum+item.estimatedValue,0);
   const categoryValues=new Map<string,number>();
@@ -54,61 +126,59 @@ export async function getOpportunityDashboard(): Promise<OpportunityDashboardDat
 export async function createDiscoveredOpportunity() {
   const pool=await getMssqlPool(); const workspace=await workspaceId();
   const title=`AI Market Opportunity ${new Date().toISOString().slice(0,16).replace("T"," ")}`;
-  const inserted=await pool.request().input("workspace",sql.UniqueIdentifier,workspace).input("title",sql.NVarChar(300),title).query<OpportunityRow>(`
-    DECLARE @brand uniqueidentifier=(SELECT TOP(1) BrandId FROM cacsms.Brands WHERE WorkspaceId=@workspace AND IsActive=1);
+  const inserted=await pool.request().query<OpportunityRow>(`
+    DECLARE @brand uniqueidentifier=(SELECT TOP(1) BrandId FROM cacsms.Brands WHERE WorkspaceId=${guid(workspace)} AND IsActive=1);
     INSERT cacsms.Opportunities (WorkspaceId,BrandId,Title,Subtitle,Category,EstimatedValue,Confidence,Timing,OwnerName,OpportunityScore,Status,MarketDemand,StrategicFit,ExecutionReadiness,CompetitiveWhitespace,IsHighPriority,IsAtRisk)
     OUTPUT inserted.OpportunityId,inserted.Title,inserted.Subtitle,inserted.Category,inserted.EstimatedValue,inserted.Confidence,inserted.Timing,inserted.OwnerName,inserted.OpportunityScore,inserted.Status,inserted.MarketDemand,inserted.StrategicFit,inserted.ExecutionReadiness,inserted.CompetitiveWhitespace,inserted.IsHighPriority,inserted.IsAtRisk
-    VALUES (@workspace,@brand,@title,N'Newly discovered · Automated scan',N'Market',18000000,76,N'Review now',N'Opportunity Intelligence',79,N'New',81,78,62,84,0,0);`);
+    VALUES (${guid(workspace)},@brand,${text(title)},N'Newly discovered - Automated scan',N'Market',18000000,76,N'Review now',N'Opportunity Intelligence',79,N'New',81,78,62,84,0,0);`);
   return mapOpportunity(inserted.recordset[0]);
 }
 
 export async function updateOpportunity(id:string, action:"open"|"initiative") {
   const pool=await getMssqlPool(); const workspace=await workspaceId();
-  const result=await pool.request().input("workspace",sql.UniqueIdentifier,workspace).input("id",sql.UniqueIdentifier,id).input("action",sql.VarChar(20),action).query<{affected:number}>(`
-    UPDATE cacsms.Opportunities SET LastOpenedAt=CASE WHEN @action='open' THEN SYSUTCDATETIME() ELSE LastOpenedAt END,
-      Status=CASE WHEN @action='initiative' THEN N'Initiative created' ELSE Status END,
-      ExecutionReadiness=CASE WHEN @action='initiative' AND ExecutionReadiness<90 THEN 90 ELSE ExecutionReadiness END, UpdatedAt=SYSUTCDATETIME()
-    WHERE WorkspaceId=@workspace AND OpportunityId=@id;
+  const result=await pool.request().query<{affected:number}>(`
+    UPDATE cacsms.Opportunities SET LastOpenedAt=CASE WHEN ${text(action)}='open' THEN SYSUTCDATETIME() ELSE LastOpenedAt END,
+      Status=CASE WHEN ${text(action)}='initiative' THEN N'Initiative created' ELSE Status END,
+      ExecutionReadiness=CASE WHEN ${text(action)}='initiative' AND ExecutionReadiness<90 THEN 90 ELSE ExecutionReadiness END, UpdatedAt=SYSUTCDATETIME()
+    WHERE WorkspaceId=${guid(workspace)} AND OpportunityId=${guid(id)};
     SELECT @@ROWCOUNT affected;`);
   if(!result.recordset[0]?.affected) throw new Error("Opportunity was not found.");
 }
 
 export async function getDiscoveryData(): Promise<DiscoveryData> {
   const pool=await getMssqlPool(); const workspace=await workspaceId();
+  await ensureAutonomousDiscoveryState(workspace);
   const [settingsResult,signalsResult]=await Promise.all([
-    pool.request().input("workspace",sql.UniqueIdentifier,workspace).query(`SELECT TOP(1) * FROM cacsms.OpportunitySettings WHERE WorkspaceId=@workspace;`),
-    pool.request().input("workspace",sql.UniqueIdentifier,workspace).query<SignalRow>(`SELECT TOP(100) SignalId,Subject,SourceMix,Velocity,Novelty,Durability,Relevance,SignalScore,State,IsWatchlisted,IsAnomaly FROM cacsms.OpportunitySignals WHERE WorkspaceId=@workspace ORDER BY SignalScore DESC,CreatedAt DESC;`)
+    pool.request().query<SettingsRow>(`SELECT TOP(1) * FROM cacsms.OpportunitySettings WHERE WorkspaceId=${guid(workspace)};`),
+    pool.request().query<SignalRow>(`SELECT TOP(100) SignalId,Subject,SourceMix,Velocity,Novelty,Durability,Relevance,SignalScore,State,IsWatchlisted,IsAnomaly FROM cacsms.OpportunitySignals WHERE WorkspaceId=${guid(workspace)} ORDER BY SignalScore DESC,CreatedAt DESC;`)
   ]);
   const row=settingsResult.recordset[0]; const signals=signalsResult.recordset.map(mapSignal);
   const settings:DiscoverySettings={scanHorizonDays:Number(row.ScanHorizonDays),primaryMarket:row.PrimaryMarket,signalSensitivity:Number(row.SignalSensitivity),minimumConfidence:Number(row.MinimumConfidence),includeWeakSignals:Boolean(row.IncludeWeakSignals),detectAnomalies:Boolean(row.DetectAnomalies),crossCheckCompetitors:Boolean(row.CrossCheckCompetitors),lastScanAt:row.LastScanAt?new Date(row.LastScanAt).toISOString():null};
-  return {settings,signals,metrics:{processed:signals.length,emerging:signals.filter(x=>/emerging|accelerating|breakout/i.test(x.state)).length,clusters:new Set(signals.map(x=>x.durability)).size,alerts:signals.filter(item=>item.anomaly||item.score>=90).length}};
+  return {settings,signals,metrics:{processed:signals.length,emerging:signals.filter(x=>/emerging|accelerating|breakout|auto-promoted/i.test(x.state)).length,clusters:new Set(signals.map(x=>x.durability)).size,alerts:signals.filter(item=>item.anomaly||item.score>=90).length}};
 }
 
 export async function saveDiscoverySettings(settings:DiscoverySettings) {
   const pool=await getMssqlPool(); const workspace=await workspaceId();
-  await pool.request().input("workspace",sql.UniqueIdentifier,workspace).input("days",sql.Int,settings.scanHorizonDays).input("market",sql.NVarChar(150),settings.primaryMarket)
-    .input("sensitivity",sql.TinyInt,settings.signalSensitivity).input("confidence",sql.TinyInt,settings.minimumConfidence)
-    .input("weak",sql.Bit,settings.includeWeakSignals).input("anomalies",sql.Bit,settings.detectAnomalies).input("competitors",sql.Bit,settings.crossCheckCompetitors).query(`
-      UPDATE cacsms.OpportunitySettings SET ScanHorizonDays=@days,PrimaryMarket=@market,SignalSensitivity=@sensitivity,MinimumConfidence=@confidence,IncludeWeakSignals=@weak,DetectAnomalies=@anomalies,CrossCheckCompetitors=@competitors,UpdatedAt=SYSUTCDATETIME() WHERE WorkspaceId=@workspace;`);
+  await pool.request().query(`
+    UPDATE cacsms.OpportunitySettings SET ScanHorizonDays=${int(settings.scanHorizonDays,1,365)},PrimaryMarket=${text(settings.primaryMarket.slice(0,150))},SignalSensitivity=${int(settings.signalSensitivity)},MinimumConfidence=${int(settings.minimumConfidence)},IncludeWeakSignals=${settings.includeWeakSignals?1:0},DetectAnomalies=${settings.detectAnomalies?1:0},CrossCheckCompetitors=${settings.crossCheckCompetitors?1:0},UpdatedAt=SYSUTCDATETIME()
+    WHERE WorkspaceId=${guid(workspace)};`);
 }
 
 export async function runDiscoveryScan() {
-  const pool=await getMssqlPool(); const workspace=await workspaceId(); const subject=`Emerging industrial automation demand · ${new Date().toLocaleDateString("en-GB")}`;
-  const result=await pool.request().input("workspace",sql.UniqueIdentifier,workspace).input("subject",sql.NVarChar(300),subject).query<SignalRow>(`
-    INSERT cacsms.OpportunitySignals (WorkspaceId,Subject,SourceMix,Velocity,Novelty,Durability,Relevance,SignalScore,State)
-    OUTPUT inserted.SignalId,inserted.Subject,inserted.SourceMix,inserted.Velocity,inserted.Novelty,inserted.Durability,inserted.Relevance,inserted.SignalScore,inserted.State,inserted.IsWatchlisted,inserted.IsAnomaly
-    VALUES (@workspace,@subject,N'Search + jobs + procurement',118,88,N'High',92,91,N'Accelerating');
-    UPDATE cacsms.OpportunitySettings SET LastScanAt=SYSUTCDATETIME(),UpdatedAt=SYSUTCDATETIME() WHERE WorkspaceId=@workspace;`);
+  const workspace=await workspaceId();
+  await runAutonomousDiscoveryScan(workspace);
+  const pool=await getMssqlPool();
+  const result=await pool.request().query<SignalRow>(`SELECT TOP(1) SignalId,Subject,SourceMix,Velocity,Novelty,Durability,Relevance,SignalScore,State,IsWatchlisted,IsAnomaly FROM cacsms.OpportunitySignals WHERE WorkspaceId=${guid(workspace)} ORDER BY CreatedAt DESC;`);
   return mapSignal(result.recordset[0]);
 }
 
 export async function createOpportunityFromSignal(signalId:string) {
   const pool=await getMssqlPool(); const workspace=await workspaceId();
-  const result=await pool.request().input("workspace",sql.UniqueIdentifier,workspace).input("signal",sql.UniqueIdentifier,signalId).query<OpportunityRow>(`
-    DECLARE @brand uniqueidentifier=(SELECT TOP(1) BrandId FROM cacsms.Brands WHERE WorkspaceId=@workspace AND IsActive=1);
+  const result=await pool.request().query<OpportunityRow>(`
+    DECLARE @brand uniqueidentifier=(SELECT TOP(1) BrandId FROM cacsms.Brands WHERE WorkspaceId=${guid(workspace)} AND IsActive=1);
     INSERT cacsms.Opportunities (WorkspaceId,BrandId,SourceSignalId,Title,Subtitle,Category,EstimatedValue,Confidence,Timing,OwnerName,OpportunityScore,Status,MarketDemand,StrategicFit,ExecutionReadiness,CompetitiveWhitespace,IsHighPriority,IsAtRisk)
     OUTPUT inserted.OpportunityId,inserted.Title,inserted.Subtitle,inserted.Category,inserted.EstimatedValue,inserted.Confidence,inserted.Timing,inserted.OwnerName,inserted.OpportunityScore,inserted.Status,inserted.MarketDemand,inserted.StrategicFit,inserted.ExecutionReadiness,inserted.CompetitiveWhitespace,inserted.IsHighPriority,inserted.IsAtRisk
-    SELECT @workspace,@brand,SignalId,Subject,N'Created from Discovery Engine',N'Discovery',24000000,Relevance,N'Act now',N'Opportunity Intelligence',SignalScore,N'Ready to validate',Relevance,86,72,Novelty,CASE WHEN SignalScore>=90 THEN 1 ELSE 0 END,0
-    FROM cacsms.OpportunitySignals WHERE WorkspaceId=@workspace AND SignalId=@signal;`);
+    SELECT ${guid(workspace)},@brand,SignalId,Subject,N'Created from Discovery Engine',N'Discovery',24000000,Relevance,N'Act now',N'Opportunity Intelligence',SignalScore,N'Ready to validate',Relevance,86,72,Novelty,CASE WHEN SignalScore>=90 THEN 1 ELSE 0 END,0
+    FROM cacsms.OpportunitySignals WHERE WorkspaceId=${guid(workspace)} AND SignalId=${guid(signalId)};`);
   if(!result.recordset[0]) throw new Error("Signal was not found."); return mapOpportunity(result.recordset[0]);
 }

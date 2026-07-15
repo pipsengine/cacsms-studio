@@ -56,7 +56,6 @@
       <section class="card recent-outputs"><div class="card-head"><h3>Recent Outputs</h3><button class="text-action">View All</button></div><div class="output-grid" id="outputGrid"></div></section>
       <section class="card"><div class="card-head"><h3>System Status</h3></div><div class="system-list"><div><span><i></i>AI Services</span><strong>Operational</strong></div><div><span><i></i>Render Workers</span><strong>12 / 12 Active</strong></div><div><span><i></i>Storage</span><strong>Healthy</strong></div><div><span><i></i>Database</span><strong>Healthy</strong></div><div><span><i></i>Integrations</span><strong>Connected</strong></div><div><span><i></i>API Gateway</span><strong>Operational</strong></div></div><div class="uptime"><span>System Uptime</span><strong>99.98%</strong></div></section>
     </div>
-    <div class="floating-controls"><button class="run-btn stop" id="runBtn"><i data-lucide="x"></i><span>Stop Pipeline</span></button></div>
   </main>
 </div>
 <script src="/shared-sidebar.js"></script>
@@ -68,8 +67,6 @@ const opportunities=[['Quantum Computing in Africa','Documentary · 16 min',98,'
 document.getElementById('opportunityList').innerHTML=opportunities.map(o=>`<div><span class="score-ring">${o[2]}</span><span><strong>${o[0]}</strong><small>${o[1]}</small></span><b class="priority ${o[3].toLowerCase()}">${o[3]}</b><em>${o[4]}</em></div>`).join('');
 const outputs=[['AI in Healthcare: Saving Lives','18:24','city'],['The Rise of Humanoid Robots','17:45','robot'],['Understanding Machine Learning','09:16','brain'],['Cybersecurity in 2025','15:31','shield'],['Smart Factories of the Future','14:02','factory']];
 document.getElementById('outputGrid').innerHTML=outputs.map((o,i)=>`<div class="output-item"><div class="thumb ${o[2]}"><i data-lucide="play-circle"></i><span>${o[1]}</span></div><strong>${o[0]}</strong><small>Published</small><em>${[2.1,3.8,5.2,1.7,2.9][i]}K views</em></div>`).join('');
-let running=true;
-document.getElementById('runBtn').onclick=e=>{running=!running;e.currentTarget.className='run-btn '+(running?'stop':'start');e.currentTarget.innerHTML=`<i data-lucide="${running?'x':'play-circle'}"></i><span>${running?'Stop':'Start'} Pipeline</span>`;lucide.createIcons()};
 document.getElementById('autoSwitch').onclick=e=>e.currentTarget.classList.toggle('on');
 const sidebarToggle=document.getElementById('sidebarToggle');
 if(sidebarToggle) sidebarToggle.onclick=()=>document.getElementById('sidebar')?.classList.toggle('collapsed');

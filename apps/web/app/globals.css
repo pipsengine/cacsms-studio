@@ -408,7 +408,7 @@ textarea {
 
 .topbar {
   position: sticky;
-  top: 0;
+  top: 52px;
   z-index: 10;
   display: flex;
   align-items: center;
@@ -1217,8 +1217,6 @@ textarea {
   font-weight: 600;
 }
 
-.landing-start,
-.landing-stop,
 .landing-minor {
   display: flex;
   align-items: center;
@@ -1229,18 +1227,6 @@ textarea {
   font-weight: 700;
 }
 
-.landing-start {
-  background: #0cad58;
-  color: white;
-}
-
-.landing-stop {
-  background: #fa3034;
-  color: white;
-}
-
-.landing-start:disabled,
-.landing-stop:disabled,
 .landing-minor:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -1894,8 +1880,10 @@ textarea {
 }
 
 .sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  padding: 10px 8px 92px;
+  padding: 10px 8px 120px;
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
   scrollbar-width: thin;
 }
@@ -2114,6 +2102,115 @@ textarea {
   width: calc(100% - 230px);
   min-width: 0;
   margin-left: 230px;
+}
+
+.system-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #dce4ef;
+  background: rgba(246, 248, 252, 0.94);
+  padding: 8px 22px;
+  backdrop-filter: blur(12px);
+}
+
+.system-clock,
+.system-controls,
+.system-state,
+.system-toggle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.system-clock {
+  gap: 10px;
+  color: #12213d;
+}
+
+.system-clock svg {
+  color: #2563eb;
+}
+
+.system-clock span {
+  display: grid;
+  gap: 1px;
+}
+
+.system-clock strong {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.system-clock small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.system-controls {
+  gap: 10px;
+}
+
+.system-toggle {
+  height: 34px;
+  gap: 7px;
+  border: 1px solid #cfd9e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #10203d;
+  padding: 0 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.system-toggle.running {
+  border-color: #fecaca;
+  color: #b42318;
+}
+
+.system-toggle.stopped {
+  border-color: #bbf7d0;
+  color: #067647;
+}
+
+.system-state {
+  height: 34px;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.system-state i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.system-state.online {
+  background: #ecfdf3;
+  color: #067647;
+}
+
+.system-state.online i {
+  background: #12b76a;
+  box-shadow: 0 0 0 4px rgba(18, 183, 106, 0.12);
+}
+
+.system-state.offline {
+  background: #fff1f3;
+  color: #b42318;
+}
+
+.system-state.offline i {
+  background: #f04438;
+  box-shadow: 0 0 0 4px rgba(240, 68, 56, 0.12);
 }
 
 .main {

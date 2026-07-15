@@ -16,12 +16,9 @@ import {
   HeartPulse,
   Instagram,
   Linkedin,
-  Pause,
-  Play,
   RefreshCw,
   Search,
   ShieldCheck,
-  Square,
   Workflow,
   XCircle,
   Youtube
@@ -180,25 +177,6 @@ export function ExecutiveDashboard({ data: initialData }: { data: ExecutiveDashb
     }
   }
 
-  async function runAction(action: "start" | "pause" | "stop") {
-    setLoading(true);
-    setMessage("");
-    try {
-      const response = await fetch("/api/dashboard/executive-dashboard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, workspaceId: data.filters.workspaceId })
-      });
-      if (!response.ok) throw new Error(`Unable to ${action} autonomous operations.`);
-      setData(await response.json());
-      setMessage(`Autonomous operations ${action === "start" ? "started" : action === "pause" ? "paused" : "stopped"}.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "The platform action failed.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <section className={styles.page} aria-labelledby="executive-dashboard-title">
       <header className={styles.header}>
@@ -266,9 +244,7 @@ export function ExecutiveDashboard({ data: initialData }: { data: ExecutiveDashb
         ))}
         <div className={styles.commandStat}><small>Last Health Check</small><strong>{data.platform.lastHealthCheck}</strong></div>
         <div className={styles.runActions}>
-          <button className={styles.startButton} type="button" onClick={() => void runAction("start")} disabled={loading || data.platform.status === "Running"}><Play size={14} aria-hidden="true" />Start</button>
-          <button className={styles.pauseButton} type="button" onClick={() => void runAction("pause")} disabled={loading || data.platform.status === "Paused"}><Pause size={14} aria-hidden="true" />Pause</button>
-          <button className={styles.stopButton} type="button" onClick={() => void runAction("stop")} disabled={loading || data.platform.status === "Stopped"}><Square size={13} aria-hidden="true" />Stop</button>
+          <span><ShieldCheck size={14} aria-hidden="true" />Runtime controlled by sticky system bar</span>
         </div>
       </section>
 

@@ -1,0 +1,95 @@
+Based on the configured production lifecycle in [production-lifecycle.ts (line 26)](C:/Content-Generation/cacsms-studio/packages/contracts/src/production-lifecycle.ts:26), these are the pages we should implement, stage by stage.
+1. Discover
+Opportunity Dashboard
+Discovery Engine
+Topic Discovery
+Trend Intelligence
+Gap Detection
+Prediction Engine
+2. Research
+Research Workspace
+Source Analysis
+Fact Verification
+Knowledge Extraction
+Citation Manager
+Knowledge Repository
+3. Evaluate
+Scoring Engine
+Opportunity Portfolio
+Editorial Board
+Executive Recommendations
+Knowledge Quality
+4. Pre-Plan
+Create Production
+Multi-Format Planner
+Campaign Builder
+Structure Dashboard
+Template Dashboard
+Evergreen Knowledge Bank
+5. Schedule
+Opportunity Scheduler
+Production Calendar
+Production Queue
+Assignments
+Scheduled Productions
+Publishing Scheduler
+6. Produce
+Script Editor
+Storyboard Editor
+Image Generator
+Scene Video Generator
+Narration Generator
+Music Generator
+All Assets
+7. Assemble
+Master Timeline
+Auto Assemble
+Synchronization
+Transition Manager
+Timeline Preview
+Production Pipeline
+8. Quality
+Quality Dashboard
+Content QA
+Fact Verification
+Visual QA
+Audio QA
+Accessibility Check
+Final Approval
+9. Export
+Export Dashboard
+Final Video Export
+Editable Scene Package
+Subtitle Package
+Publishing Package
+Export History
+Download Center
+10. Publish
+Publishing Dashboard
+Channels
+Scheduler
+SEO and Metadata
+Thumbnail Optimizer
+Publishing Queue
+Publication History
+11. Monitor
+Publishing Overview
+Audience Analytics
+Engagement Analytics
+Production Analytics
+Publishing Analytics
+System Health
+12. Learn
+Learning Engine
+Learning Analytics
+Knowledge Analytics
+Agent Performance
+Memory
+Audit History
+13. Repeat
+Autonomy Modes
+Executive Recommendations
+Production Workflows
+Event Triggers
+Retry Manager
+Discovery Engine

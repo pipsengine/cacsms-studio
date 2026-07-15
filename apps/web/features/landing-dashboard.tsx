@@ -12,13 +12,10 @@ import {
   Cpu,
   Database,
   DollarSign,
-  Pause,
   Play,
-  RotateCcw,
   Send,
   Server,
   Sparkles,
-  Square,
   Target,
   Zap
 } from "lucide-react";
@@ -70,8 +67,6 @@ const notifications = [
 ];
 
 export function LandingDashboard() {
-  const [running, setRunning] = useState(true);
-  const [paused, setPaused] = useState(false);
   const [health, setHealth] = useState<HealthPayload | null>(null);
 
   useEffect(() => {
@@ -103,7 +98,7 @@ export function LandingDashboard() {
             Project: <b>The Future of AI</b>
           </Link>
           <Link className="landing-mode" href="/automation">
-            <i /> Autonomous Mode <b>{running && !paused ? "ON" : paused ? "PAUSED" : "OFF"}</b>
+            <i /> Autonomous Mode <b>GLOBAL</b>
           </Link>
           <Link className="landing-icon-btn" aria-label="Notifications" href="/home/notifications">
             <Bell size={18} />
@@ -119,18 +114,16 @@ export function LandingDashboard() {
         <strong>AUTONOMOUS OPERATIONS CONTROL</strong>
         <div className="landing-ops-grid">
           <label className="landing-select"><small>Autonomy Mode</small><select><option>Fully Autonomous</option><option>Supervised Autonomous</option><option>Assisted</option></select></label>
-          <button className="landing-start" type="button" disabled={running && !paused} onClick={() => { setRunning(true); setPaused(false); }}><Play size={18} fill="currentColor" /> Start All</button>
-          <button className="landing-stop" type="button" disabled={!running} onClick={() => { setRunning(false); setPaused(false); }}><Square size={17} fill="currentColor" /> Stop All</button>
-          <button className="landing-minor" type="button" disabled={!running || paused} onClick={() => setPaused(true)}><Pause size={18} />Pause</button>
-          <button className="landing-minor" type="button" disabled={running && !paused} onClick={() => { setRunning(true); setPaused(false); }}><RotateCcw size={18} />Resume</button>
+          <div className="landing-switch"><small>Runtime control</small><span>TOP BAR</span></div>
+          <div className="landing-switch"><small>System authority</small><span>GLOBAL</span></div>
           <div className="landing-switch"><small>Auto-Advance</small><span>ON</span></div>
           <div className="landing-switch"><small>Approvals</small><span>ON</span></div>
           <OpsStat label="Budget (Today)" value="$3,450.00" sub="75% of daily limit" width="75%" />
           <OpsStat label="Active Workers" value="12 / 12" sub="100% Utilization" width="100%" />
           <OpsStat label="Queue Status" value="32 Jobs" sub="8 Rendering" width="42%" purple />
         </div>
-        <div className={`landing-runtime ${running ? "running" : "stopped"}`} role="status" aria-live="polite">
-          {running ? (paused ? "Pipeline paused safely" : "Autonomous studio is running") : "Autonomous studio is stopped"}
+        <div className="landing-runtime running" role="status" aria-live="polite">
+          Runtime start and stop are controlled only from the sticky system bar.
         </div>
       </section>
 

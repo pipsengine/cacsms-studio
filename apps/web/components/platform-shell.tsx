@@ -22,6 +22,7 @@ import {
   Mic2,
   Network,
   PenLine,
+  Power,
   PlaySquare,
   Radio,
   Settings,
@@ -94,6 +95,8 @@ const moduleGroups = [
 
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [now, setNow] = useState<Date | null>(null);
+  const [systemRunning, setSystemRunning] = useState(true);
   const activeModule =
     (pathname.startsWith("/home/") ? navigationModules.find((module) => module.slug === "dashboard") : undefined) ??
     (pathname.startsWith("/production-studio") ? navigationModules.find((module) => module.slug === "productions") : undefined) ??
@@ -116,6 +119,33 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setOpenModule(activeModule?.slug ?? "dashboard");
   }, [activeModule?.slug]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("cacsms-system-running");
+    if (stored === "false") setSystemRunning(false);
+    if (stored === "true") setSystemRunning(true);
+  }, []);
+
+  useEffect(() => {
+    setNow(new Date());
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  function toggleSystem() {
+    setSystemRunning((current) => {
+      const next = !current;
+      window.localStorage.setItem("cacsms-system-running", String(next));
+      return next;
+    });
+  }
+
+  const nigeriaTime = now
+    ? new Intl.DateTimeFormat("en-NG", {timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit", second: "2-digit"}).format(now)
+    : "--:--:--";
+  const nigeriaDate = now
+    ? new Intl.DateTimeFormat("en-NG", {timeZone: "Africa/Lagos", weekday: "long", day: "2-digit", month: "long", year: "numeric"}).format(now)
+    : "Loading Nigeria local date";
 
   return (
     <div className="shell">
@@ -194,6 +224,25 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="content">
+        <header className="system-topbar" aria-label="System status bar">
+          <div className="system-clock">
+            <CalendarClock size={17} aria-hidden="true" />
+            <span>
+              <strong>{nigeriaTime}</strong>
+              <small>{nigeriaDate}</small>
+            </span>
+          </div>
+          <div className="system-controls">
+            <button className={`system-toggle${systemRunning ? " running" : " stopped"}`} type="button" onClick={toggleSystem}>
+              <Power size={16} aria-hidden="true" />
+              {systemRunning ? "Stop" : "Start"}
+            </button>
+            <span className={`system-state${systemRunning ? " online" : " offline"}`}>
+              <i aria-hidden="true" />
+              System {systemRunning ? "Online" : "Offline"}
+            </span>
+          </div>
+        </header>
         {!dashboardRoute ? (
           <header className="topbar">
             <div>
