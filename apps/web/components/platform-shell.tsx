@@ -210,7 +210,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
 
 function hrefForChild(moduleSlug: string, childSlug: string) {
   if (moduleSlug === "dashboard" && childSlug === "production-workflow") {
-    return "/production-workflow/index.html";
+    return "/production-workflow/discover";
   }
   if (moduleSlug === "dashboard" && childSlug === "production-pipeline") {
     return "/production-pipeline/index.html";
