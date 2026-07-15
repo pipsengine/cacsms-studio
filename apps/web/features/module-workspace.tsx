@@ -45,6 +45,8 @@ import { MyWorkspaceDashboard } from "@/features/my-workspace/MyWorkspaceDashboa
 import { getMyWorkspaceData } from "@/lib/my-workspace-data";
 import { ActiveProductionsPage } from "@/features/active-productions/ActiveProductionsPage";
 import { RecentProductionsPage } from "@/features/recent-productions/RecentProductionsPage";
+import { KnowledgeUniversePage } from "@/features/knowledge-universe/KnowledgeUniversePage";
+import { listKnowledgeRecords, type KnowledgeRecordType } from "@/lib/knowledge-universe-data";
 
 export async function ModuleWorkspace({
   moduleSlug,
@@ -91,7 +93,25 @@ export async function ModuleWorkspace({
   }
 
   if (module.slug === "knowledge-universe") {
-    return <KnowledgeUniverseWorkspace title={title} workspaceLabel={workspace?.label} />;
+    const slug = workspace?.slug ?? "executive-dashboard";
+    const typeByWorkspace: Partial<Record<string, KnowledgeRecordType>> = {
+      "knowledge-graph": "entity",
+      "knowledge-repository": "source",
+      "knowledge-collections": "collection",
+      "topic-library": "topic",
+      "entity-explorer": "entity",
+      "timeline-explorer": "event",
+      "geographic-intelligence": "location",
+      "people-intelligence": "person",
+      "organization-intelligence": "organization"
+    };
+    try {
+      const initial = await listKnowledgeRecords({ type: typeByWorkspace[slug], pageSize: 25 });
+      return <KnowledgeUniversePage slug={slug} initial={initial} />;
+    } catch (error) {
+      console.error("knowledge.workspace.load.failed", { name: error instanceof Error ? error.name : "Unknown" });
+      return <KnowledgeUniversePage slug={slug} error="The MSSQL knowledge store is unavailable. Run migration 013 and retry." />;
+    }
   }
 
   return (
