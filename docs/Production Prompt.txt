@@ -1,0 +1,7 @@
+Implement every assigned page as a professional, modern, Figma-quality interface consistent with the existing application design system and reference images. Preserve the established layout, navigation, typography, colours, spacing, responsiveness, accessibility, and visual hierarchy.
+
+Make each page fully functional and autonomous—not a static prototype. Connect it end-to-end to the existing frontend, backend API, database, workflow engine, and production pipeline. Use real persistent data; do not use mock, hard-coded, duplicated, or browser-only data.
+
+The system must automatically validate inputs, make permitted decisions, enforce dependencies and quality gates, process eligible work, update statuses and progress in real time, retry recoverable failures, route exceptions, maintain audit history, and advance work to the appropriate next stage without unnecessary human intervention. Human control should be limited to Start/Stop and mandatory governance approvals.
+
+Include all required actions, validations, filters, loading, empty, success, warning, blocked, error, offline, and recovery states. Reuse existing components and services, preserve working functionality, avoid duplicate pages or data, and complete responsive, accessibility, API, database, workflow, security, and regression testing before marking any page complete.

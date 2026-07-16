@@ -27,6 +27,10 @@ export type OperationalPageData = {
     averageScore: number;
     totalAmount: number;
   };
+  autonomy?: {
+    enabled:boolean;state:"running"|"healthy"|"waiting"|"failed";algorithmVersion:string;intervalSeconds:number;nextRunAt:string|null;
+    lastRun:null|{trigger:string;scanned:number;ingested:number;updated:number;promoted:number;enriching:number;duplicates:number;portfolioScore:number;averageConfidence:number;completedAt:string|null;error:string|null;verified?:number;approved?:number;held?:number;editorialHealth?:number;committed?:number;executing?:number;deferred?:number;strategicValue?:number;investmentCommitted?:number;masters?:number;variants?:number;ready?:number;optimized?:number;channelCoverage?:number;reuseEfficiency?:number;adaptationQuality?:number;campaigns?:number;assets?:number;scheduled?:number;launched?:number;projectedReach?:number;budgetAllocated?:number;launchReadiness?:number;certified?:number;refreshQueued?:number;freshness?:number;reuseReadiness?:number;retired?:number;scheduledAssets?:number;upcoming?:number;rebalanced?:number;conflicts?:number;timingScore?:number;capacityScore?:number};
+  };
   generatedAt: string;
 };
 

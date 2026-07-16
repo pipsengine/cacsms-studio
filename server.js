@@ -2,9 +2,13 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
+const { randomUUID } = require("node:crypto");
 
 const webDir = path.join(__dirname, "apps", "web");
 loadWebEnvironment(webDir);
+if (!process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN) {
+  process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN = randomUUID();
+}
 
 const pipelineDir = path.join(webDir, "public", "production-pipeline");
 const pipelineIndexPath = path.join(pipelineDir, "index.html");
@@ -83,7 +87,267 @@ function listen(server) {
 
   server.listen(Number(port), hostname, () => {
     console.log(`CACSMS Studio listening on ${hostname}:${port}`);
+    startAutonomousKnowledgeScheduler();
+    startAutonomousOpportunityScoringScheduler();
+    startAutonomousOpportunityPortfolioScheduler();
+    startAutonomousEditorialScheduler();
+    startAutonomousExecutiveRecommendationScheduler();
+    startAutonomousKnowledgeQualityScheduler();
+    startAutonomousProductionOrchestrationScheduler();
+    startAutonomousMultiFormatPlannerScheduler();
+    startAutonomousCampaignBuilderScheduler();
+    startAutonomousEvergreenKnowledgeScheduler();
+    startAutonomousTemplateIntelligenceScheduler();
+    startAutonomousOpportunityScheduler();
+    startAutonomousStoryStructureScheduler();
   });
+}
+
+function startAutonomousOpportunityScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_OPPORTUNITY_SCHEDULER_INTERVAL_MS || 30_000));
+  const run = async () => { try { const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/opportunity-scheduler`, {method:"POST", headers:{"content-type":"application/json","x-cacsms-internal":process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN}, body:JSON.stringify({action:"run"}), signal:AbortSignal.timeout(55_000)}); if(!response.ok) console.error("opportunity.scheduler.failed",{status:response.status}); } catch(error) { console.error("opportunity.scheduler.failed",{name:error instanceof Error?error.name:"Unknown"}); } };
+  setTimeout(run, 41_000).unref(); setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousKnowledgeScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_KNOWLEDGE_INTERVAL_MS || 60_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/knowledge-universe/autonomy`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run", trigger: "scheduler"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("knowledge.autonomy.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("knowledge.autonomy.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 5_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousOpportunityScoringScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_SCORING_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/scoring-engine`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("opportunity.scoring.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("opportunity.scoring.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 10_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousOpportunityPortfolioScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_PORTFOLIO_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/opportunity-portfolio`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("opportunity.portfolio.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("opportunity.portfolio.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 15_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousEditorialScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_EDITORIAL_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/editorial-board`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("opportunity.editorial.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("opportunity.editorial.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 20_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousExecutiveRecommendationScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_EXECUTIVE_RECOMMENDATION_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/executive-recommendations`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("opportunity.executive.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("opportunity.executive.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 25_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousKnowledgeQualityScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_KNOWLEDGE_QUALITY_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/knowledge-universe/quality`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("knowledge.quality.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("knowledge.quality.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 28_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousProductionOrchestrationScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_PRODUCTION_ORCHESTRATION_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/production-studio/create-production`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("production.orchestration.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("production.orchestration.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 29_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousMultiFormatPlannerScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_MULTI_FORMAT_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/multi-format-planner`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("opportunity.multi-format.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("opportunity.multi-format.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 31_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousCampaignBuilderScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_CAMPAIGN_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/campaign-builder`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("opportunity.campaign.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("opportunity.campaign.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 33_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousEvergreenKnowledgeScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_EVERGREEN_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/evergreen-knowledge-bank`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("opportunity.evergreen.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("opportunity.evergreen.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 37_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousTemplateIntelligenceScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_TEMPLATE_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/opportunity-intelligence/operations/template-dashboard`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("templates.autonomy.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("templates.autonomy.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 39_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousStoryStructureScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_STORY_STRUCTURE_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/story-learning/structure-dashboard`, {
+        method: "POST",
+        headers: {"content-type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN},
+        body: JSON.stringify({action: "run"}),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("story.structure.scheduler.failed", {status: response.status});
+    } catch (error) {
+      console.error("story.structure.scheduler.failed", {name: error instanceof Error ? error.name : "Unknown"});
+    }
+  };
+  setTimeout(run, 35_000).unref();
+  setInterval(run, intervalMs).unref();
 }
 
 function handleFallbackRequest(request, response) {

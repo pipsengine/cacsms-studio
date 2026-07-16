@@ -2,7 +2,7 @@ import sql from "mssql";
 import { getMssqlPool } from "@/lib/database/mssql";
 
 export const knowledgeRecordTypes = ["entity", "relationship", "collection", "topic", "event", "location", "person", "organization", "source", "priority"] as const;
-export const knowledgeStatuses = ["active", "verified", "review", "processing", "draft", "archived"] as const;
+export const knowledgeStatuses = ["active", "verified", "review", "processing", "draft", "quarantined", "archived"] as const;
 export type KnowledgeRecordType = (typeof knowledgeRecordTypes)[number];
 export type KnowledgeStatus = (typeof knowledgeStatuses)[number];
 
@@ -54,7 +54,7 @@ export interface KnowledgeListResult {
   total: number;
   page: number;
   pageSize: number;
-  metrics: { total: number; verified: number; review: number; averageConfidence: number; averageQuality: number; relationships: number };
+  metrics: { total: number; verified: number; review: number; processing: number; averageConfidence: number; averageQuality: number; relationships: number };
 }
 
 export interface KnowledgeListQuery {
@@ -160,6 +160,7 @@ export async function listKnowledgeRecords(query: KnowledgeListQuery = {}): Prom
   const result = await request.query(`${selectRecord} ${where} ORDER BY ${order} OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
     SELECT COUNT_BIG(*) total FROM cacsms.KnowledgeRecords r ${where};
     SELECT COUNT_BIG(*) total, SUM(CASE WHEN Status=N'verified' THEN 1 ELSE 0 END) verified, SUM(CASE WHEN Status=N'review' THEN 1 ELSE 0 END) review,
+      SUM(CASE WHEN Status=N'processing' THEN 1 ELSE 0 END) processing,
       ISNULL(AVG(CONVERT(float,Confidence)),0) averageConfidence, ISNULL(AVG(CONVERT(float,QualityScore)),0) averageQuality
       FROM cacsms.KnowledgeRecords WHERE ArchivedAt IS NULL;
     SELECT COUNT_BIG(*) relationships FROM cacsms.KnowledgeLinks WHERE Status<>N'archived';
@@ -175,7 +176,7 @@ export async function listKnowledgeRecords(query: KnowledgeListQuery = {}): Prom
   const metric = sets[2][0] as unknown as Record<string, number>;
   return {
     records: sets[0].map(mapRecord), total:Number(sets[1][0].total), page,pageSize,
-    metrics:{total:Number(metric.total),verified:Number(metric.verified),review:Number(metric.review),averageConfidence:Number(metric.averageConfidence),averageQuality:Number(metric.averageQuality),relationships:Number(sets[3][0].relationships)},
+    metrics:{total:Number(metric.total),verified:Number(metric.verified),review:Number(metric.review),processing:Number(metric.processing),averageConfidence:Number(metric.averageConfidence),averageQuality:Number(metric.averageQuality),relationships:Number(sets[3][0].relationships)},
     domains: sets[4] as unknown as KnowledgeDomainRow[], links: sets[5] as unknown as KnowledgeLinkRow[]
   };
 }

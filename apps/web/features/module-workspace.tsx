@@ -47,7 +47,16 @@ import { ActiveProductionsPage } from "@/features/active-productions/ActiveProdu
 import { RecentProductionsPage } from "@/features/recent-productions/RecentProductionsPage";
 import { KnowledgeUniversePage } from "@/features/knowledge-universe/KnowledgeUniversePage";
 import { PredictionEnginePage } from "@/features/knowledge-universe/PredictionEnginePage";
+import { KnowledgeQualityPage } from "@/features/knowledge-universe/KnowledgeQualityPage";
 import { listKnowledgeRecords, type KnowledgeRecordType } from "@/lib/knowledge-universe-data";
+import { StructureDashboard } from "@/features/story-learning/StructureDashboard";
+import { TemplateDashboard } from "@/features/templates/TemplateDashboard";
+import { AutonomousAutomationWorkspace } from "@/features/automation/AutonomousAutomationWorkspace";
+import { AutonomousScheduledProductionsPage } from "@/features/automation/AutonomousScheduledProductionsPage";
+import { AutonomousPublishingSchedulerPage } from "@/features/publishing/AutonomousPublishingSchedulerPage";
+import { AutonomousAssignmentsPage } from "@/features/collaboration/AutonomousAssignmentsPage";
+import { ScriptEditorWorkspace } from "@/features/writing/ScriptEditorWorkspace";
+import { getScriptEditorData } from "@/lib/script-editor-data";
 
 export async function ModuleWorkspace({
   moduleSlug,
@@ -98,6 +107,9 @@ export async function ModuleWorkspace({
     if (slug === "prediction-engine") {
       return <PredictionEnginePage />;
     }
+    if (slug === "knowledge-quality") {
+      return <KnowledgeQualityPage />;
+    }
     const typeByWorkspace: Partial<Record<string, KnowledgeRecordType>> = {
       "knowledge-graph": "entity",
       "knowledge-repository": "source",
@@ -115,6 +127,34 @@ export async function ModuleWorkspace({
     } catch (error) {
       console.error("knowledge.workspace.load.failed", { name: error instanceof Error ? error.name : "Unknown" });
       return <KnowledgeUniversePage slug={slug} error="The MSSQL knowledge store is unavailable. Run migration 013 and retry." />;
+    }
+  }
+
+  if (module.slug === "story-learning" && workspace?.slug === "structure-dashboard") {
+    return <StructureDashboard />;
+  }
+
+  if (module.slug === "templates" && workspace?.slug === "template-dashboard") {
+    return <TemplateDashboard />;
+  }
+
+  if (module.slug === "automation" && workspace?.slug && workspace.slug !== "scheduled-productions") { return <AutonomousAutomationWorkspace workspaceSlug={workspace.slug} />; }
+
+  if (module.slug === "automation" && workspace?.slug === "scheduled-productions") { return <AutonomousScheduledProductionsPage />; }
+
+  if (module.slug === "publishing" && workspace?.slug === "scheduler") { return <AutonomousPublishingSchedulerPage />; }
+
+  if (module.slug === "collaboration" && workspace?.slug === "assignments") {
+    try { return <AutonomousAssignmentsPage />; } catch (error) { console.error("collaboration.assignments.load.failed", error); }
+  }
+
+  if (module.slug === "writing" && workspace?.slug === "script-editor") {
+    try {
+      const data = await getScriptEditorData();
+      return <ScriptEditorWorkspace initial={data.productions} />;
+    } catch (error) {
+      console.error("writing.script-editor.load.failed", error);
+      return <ScriptEditorWorkspace error="The MSSQL production store is unavailable. Script editing will recover automatically when the connection returns." />;
     }
   }
 

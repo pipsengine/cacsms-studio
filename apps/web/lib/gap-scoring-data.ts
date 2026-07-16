@@ -279,20 +279,31 @@ export async function getScoringData(): Promise<ScoringData> {
   const scores = result.items.map((item) => item.score);
   const aggregateAverage = scores.length ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 0;
   const exceptional = scores.filter((score) => score >= 85).length;
+  const autonomyResult = await result.pool.request().input("workspace",result.workspace).query(`
+    SELECT TOP(1) Enabled,RunIntervalSeconds,AlgorithmVersion,CONVERT(float,AutoPromoteThreshold) promoteThreshold,CONVERT(float,AutoPrioritizeThreshold) prioritizeThreshold,CONVERT(nvarchar(40),NextRunAt,127) nextRunAt
+    FROM cacsms.OpportunityScoringAutonomySettings WHERE WorkspaceId=@workspace;
+    SELECT TOP(1) Status status,TriggerSource [trigger],CandidatesScanned scanned,RecordsCreated created,RecordsUpdated updated,RecordsPromoted promoted,RecordsEnriching enriching,CONVERT(float,AverageScore) averageScore,CONVERT(float,AverageConfidence) averageConfidence,CONVERT(nvarchar(40),CompletedAt,127) completedAt,ErrorMessage error
+    FROM cacsms.OpportunityScoringAutonomyRuns WHERE WorkspaceId=@workspace ORDER BY StartedAt DESC;
+    SELECT TOP(8) d.OpportunityScoringDecisionId id,d.Action action,CONVERT(float,d.Score) score,CONVERT(float,d.Confidence) confidence,i.Title title,CONVERT(nvarchar(40),d.CreatedAt,127) createdAt
+    FROM cacsms.OpportunityScoringAutonomyDecisions d JOIN cacsms.OpportunityScoringAutonomyRuns r ON r.OpportunityScoringRunId=d.OpportunityScoringRunId LEFT JOIN cacsms.IntelligenceItems i ON i.IntelligenceItemId=d.IntelligenceItemId
+    WHERE r.WorkspaceId=@workspace ORDER BY d.CreatedAt DESC;
+  `);
+  const autonomySets=autonomyResult.recordsets as unknown as Array<Array<Record<string,unknown>>>;const autonomySettings=autonomySets[0][0];const last=autonomySets[1][0];
   const metrics: EngineMetric[] = [
     {value: String(scores.length), label: "Opportunities Scored", detail: "Stored scoring records", tone: "purple"},
     {value: String(exceptional), label: "High-Value Opportunities", detail: "Score 85 or above", tone: "green"},
     {value: String(aggregateAverage), label: "Average Score", detail: "Calculated live", tone: "orange"},
-    {value: "Opportunity v3.2", label: "Active Scoring Model", detail: "Persisted weight model", tone: "blue"},
+    {value: "Adaptive v4", label: "Active Scoring Model", detail: "Self-calibrating ensemble", tone: "blue"},
   ];
   return {
     metrics,
     items: result.items,
     lastRunAt: result.lastRunAt,
-    modelName: "Opportunity v3.2",
+    modelName: "Adaptive Opportunity v4",
     weights: weights.recordset.map((row) => ({key: row.FactorKey, label: row.Label, description: row.Description, weight: Number(row.Weight), rating: row.Rating})),
     averageScore: aggregateAverage,
     distribution: {exceptional, strong: scores.filter((score) => score >= 70 && score < 85).length, moderate: scores.filter((score) => score >= 50 && score < 70).length, low: scores.filter((score) => score < 50).length},
+    autonomy:{enabled:Boolean(autonomySettings?.Enabled),state:last?.status==="running"?"running":last?.status==="failed"?"failed":last?"healthy":"waiting",algorithmVersion:String(autonomySettings?.AlgorithmVersion??"adaptive-opportunity-ensemble-v4"),intervalSeconds:Number(autonomySettings?.RunIntervalSeconds??30),nextRunAt:autonomySettings?.nextRunAt?String(autonomySettings.nextRunAt):null,thresholds:{promote:Number(autonomySettings?.promoteThreshold??85),prioritize:Number(autonomySettings?.prioritizeThreshold??70)},lastRun:last?{status:String(last.status),trigger:String(last.trigger),scanned:Number(last.scanned),created:Number(last.created),updated:Number(last.updated),promoted:Number(last.promoted),enriching:Number(last.enriching),averageScore:Number(last.averageScore),averageConfidence:Number(last.averageConfidence),completedAt:last.completedAt?String(last.completedAt):null,error:last.error?String(last.error):null}:null,recentDecisions:autonomySets[2].map(row=>({id:Number(row.id),action:String(row.action),score:Number(row.score),confidence:Number(row.confidence),title:row.title?String(row.title):null,createdAt:String(row.createdAt)}))},
   };
 }
 
