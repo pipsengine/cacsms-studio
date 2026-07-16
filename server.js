@@ -100,7 +100,28 @@ function listen(server) {
     startAutonomousTemplateIntelligenceScheduler();
     startAutonomousOpportunityScheduler();
     startAutonomousStoryStructureScheduler();
+    startAutonomousScriptWritingScheduler();
   });
+}
+
+function startAutonomousScriptWritingScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_SCRIPT_WRITING_INTERVAL_MS || 30_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/writing/script-editor`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
+        body: JSON.stringify({ action: "scheduler" }),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("script-writing.scheduler.failed", { status: response.status });
+    } catch (error) {
+      console.error("script-writing.scheduler.failed", { name: error instanceof Error ? error.name : "Unknown" });
+    }
+  };
+  setTimeout(run, 35_000).unref();
+  setInterval(run, intervalMs).unref();
 }
 
 function startAutonomousOpportunityScheduler() {
