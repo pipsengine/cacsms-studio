@@ -1,4 +1,4 @@
-import sql from "mssql";
+﻿import sql from "mssql";
 import { getMssqlPool } from "@/lib/database/mssql";
 
 const WRITING_STATES = [
@@ -203,6 +203,7 @@ export interface ScriptVersionView {
   id: string;
   attemptNumber: number;
   label: string;
+  content: string;
   wordCount: number;
   qualityScore: number;
   createdAt: string;
@@ -359,58 +360,138 @@ function briefFromMetadata(row: ProductionRow, metadata: Record<string, unknown>
   );
 }
 
+function asWritingState(value: unknown): WritingState | null {
+  return WRITING_STATES.includes(value as WritingState) ? (value as WritingState) : null;
+}
+
+function isMissingObjectError(error: unknown, objectName: string) {
+  return error instanceof Error && error.message.includes(`Invalid object name '${objectName}'`);
+}
+
+async function loadActiveWorkspaceId(pool: sql.ConnectionPool) {
+  const result = await pool.request().query<{ WorkspaceId: string }>(
+    `SELECT TOP(1) CONVERT(nvarchar(36),WorkspaceId) WorkspaceId
+     FROM cacsms.Workspaces
+     WHERE Status=N'active'
+     ORDER BY CreatedAt`
+  );
+  return result.recordset[0]?.WorkspaceId ?? null;
+}
+
+function defaultSettings(workspaceId: string): SettingsRow {
+  return {
+    WorkspaceId: workspaceId,
+    Enabled: true,
+    RunIntervalSeconds: 30,
+    QualityThreshold: 85,
+    MinimumBriefLength: 60,
+    MinimumResearchSources: 2,
+    MinimumWordCount: 180,
+    MaxRevisionAttempts: 3,
+    WriterModel: "CACSMS Narrative Synthesis Engine v2",
+    ReviewerModel: "CACSMS Script Governance Engine v2",
+    NextRunAt: null
+  };
+}
+
+function metadataSections(metadata: Record<string, unknown>): SectionRow[] {
+  return listFromJson<Record<string, unknown>>(metadata.scriptSections).map((section, index) => ({
+    id: sanitizeText(section.id || `${section.key || "section"}-${index + 1}`, 80) || `${index + 1}`,
+    key: sanitizeText(section.key || `section-${index + 1}`, 80) || `section-${index + 1}`,
+    title: sanitizeText(section.title || `Section ${index + 1}`, 200) || `Section ${index + 1}`,
+    sequenceNo: index + 1,
+    status: sanitizeText(section.status || "completed", 30) || "completed",
+    wordCount: Number(section.wordCount ?? 0),
+    citationCount: Number(section.citationCount ?? 0),
+    content: sanitizeText(section.content),
+    completedAt: sanitizeText(section.completedAt, 40) || null
+  }));
+}
+
+function metadataSources(metadata: Record<string, unknown>): SourceRow[] {
+  const rawSources = listFromJson<Record<string, unknown>>(metadata.scriptSources).length
+    ? listFromJson<Record<string, unknown>>(metadata.scriptSources)
+    : listFromJson<Record<string, unknown>>(metadata.researchSources);
+
+  return rawSources.map((source, index) => ({
+    id: sanitizeText(source.id || `source-${index + 1}`, 80) || `source-${index + 1}`,
+    sectionId: sanitizeText(source.sectionId, 80) || null,
+    knowledgeRecordId: sanitizeText(source.knowledgeRecordId, 80) || null,
+    citation: sanitizeText(source.citation || `[S] ${source.title || source.sourceTitle || `Source ${index + 1}`}`, 500),
+    sourceTitle: sanitizeText(source.title || source.sourceTitle || `Source ${index + 1}`, 300) || `Source ${index + 1}`,
+    sourceStatus: sanitizeText(source.status || source.sourceStatus || "verified", 30) || "verified",
+    confidence: Number(source.confidence ?? 0),
+    evidenceText: sanitizeText(source.evidence || source.evidenceText || source.summary, 2000),
+    createdAt: sanitizeText(source.createdAt, 40) || new Date(0).toISOString()
+  }));
+}
+
+function metadataVersions(metadata: Record<string, unknown>, fallbackBody: string): VersionRow[] {
+  const stored = listFromJson<Record<string, unknown>>(metadata.scriptVersions).map((version, index) => ({
+    id: sanitizeText(version.id || `version-${index + 1}`, 80) || `version-${index + 1}`,
+    attemptNumber: Number(version.attemptNumber ?? index + 1),
+    label: sanitizeText(version.label || `Draft ${index + 1}`, 200) || `Draft ${index + 1}`,
+    content: sanitizeText(version.content || (index === 0 ? fallbackBody : ""), 50000),
+    wordCount: Number(version.wordCount ?? wordCount(sanitizeText(version.content || (index === 0 ? fallbackBody : ""), 50000))),
+    qualityScore: Number(version.qualityScore ?? metadata.scriptQualityScore ?? 0),
+    createdAt: sanitizeText(version.createdAt, 40) || new Date(0).toISOString()
+  }));
+
+  if (stored.length > 0) return stored;
+  if (!fallbackBody) return [];
+
+  return [
+    {
+      id: "metadata-version-1",
+      attemptNumber: 1,
+      label: "Metadata Draft",
+      content: fallbackBody,
+      wordCount: wordCount(fallbackBody),
+      qualityScore: Number(metadata.scriptQualityScore ?? 0),
+      createdAt: sanitizeText(metadata.scriptAutosaveAt, 40) || new Date().toISOString()
+    }
+  ];
+}
+
+function metadataChecks(metadata: Record<string, unknown>): CheckRow[] {
+  return listFromJson<Record<string, unknown>>(metadata.scriptCompliance).map((check, index) => ({
+    id: index + 1,
+    attemptNumber: Number(check.attemptNumber ?? 1),
+    checkType: (sanitizeText(check.type, 40) || "editorial") as CheckType,
+    status: (sanitizeText(check.status, 30) || "warning") as "passed" | "failed" | "warning",
+    score: Number(check.score ?? 0),
+    notes: sanitizeText(check.notes, 1000) || null,
+    createdAt: sanitizeText(check.createdAt, 40) || new Date(0).toISOString()
+  }));
+}
+
 async function getContext() {
   const pool = await getMssqlPool();
-  const result = await pool.request().query<SettingsRow>(
-    `SELECT TOP(1) s.*
-     FROM cacsms.ScriptWritingSettings s
-     JOIN cacsms.Workspaces w ON w.WorkspaceId=s.WorkspaceId
-     WHERE w.Status=N'active'
-     ORDER BY w.CreatedAt`
-  );
-  const settings = result.recordset[0];
-  if (!settings) throw new Error("Autonomous script writing is not configured. Run migration 031 and retry.");
-  return { pool, settings };
+  try {
+    const result = await pool.request().query<SettingsRow>(
+      `SELECT TOP(1) s.*
+       FROM cacsms.ScriptWritingSettings s
+       JOIN cacsms.Workspaces w ON w.WorkspaceId=s.WorkspaceId
+       WHERE w.Status=N'active'
+       ORDER BY w.CreatedAt`
+    );
+    const settings = result.recordset[0];
+    if (settings) return { pool, settings, schemaReady: true as const };
+  } catch (error) {
+    if (!isMissingObjectError(error, "cacsms.ScriptWritingSettings")) throw error;
+  }
+
+  const workspaceId = await loadActiveWorkspaceId(pool);
+  if (!workspaceId) {
+    throw new Error("Autonomous script writing requires an active workspace.");
+  }
+  return { pool, settings: defaultSettings(workspaceId), schemaReady: false as const };
 }
 
 async function loadProductions(pool: sql.ConnectionPool, workspace: string) {
-  const result = await pool.request().input("workspace", sql.UniqueIdentifier, workspace).query<ProductionRow>(
-    `SELECT TOP(40)
-        CONVERT(nvarchar(36),p.ProductionId) id,
-        p.Code code,
-        p.Title title,
-        p.ProductionType type,
-        p.Stage stage,
-        p.Status status,
-        p.Progress progress,
-        p.Priority priority,
-        CONVERT(nvarchar(40),p.UpdatedAt,127) updatedAt,
-        p.MetadataJson metadataJson,
-        CONVERT(nvarchar(36),p.AutonomousSourceRecordId) sourceRecordId,
-        source.Title sourceTitle,
-        source.Description sourceDescription
-      FROM cacsms.Productions p
-      LEFT JOIN cacsms.OpportunityOperationalRecords source ON source.RecordId=p.AutonomousSourceRecordId
-      WHERE p.WorkspaceId=@workspace
-        AND p.Status NOT IN (N'archived', N'cancelled')
-      ORDER BY
-        CASE
-          WHEN p.Stage IN (N'research', N'scripting') THEN 0
-          WHEN p.Stage=N'storyboard' THEN 1
-          ELSE 2
-        END,
-        p.UpdatedAt DESC`
-  );
-  return result.recordset;
-}
-
-async function loadProductionRow(pool: sql.ConnectionPool, workspace: string, productionId: string) {
-  const result = await pool
-    .request()
-    .input("workspace", sql.UniqueIdentifier, workspace)
-    .input("id", sql.UniqueIdentifier, productionId)
-    .query<ProductionRow>(
-      `SELECT TOP(1)
+  try {
+    const result = await pool.request().input("workspace", workspace).query<ProductionRow>(
+      `SELECT TOP(40)
           CONVERT(nvarchar(36),p.ProductionId) id,
           p.Code code,
           p.Title title,
@@ -426,13 +507,105 @@ async function loadProductionRow(pool: sql.ConnectionPool, workspace: string, pr
           source.Description sourceDescription
         FROM cacsms.Productions p
         LEFT JOIN cacsms.OpportunityOperationalRecords source ON source.RecordId=p.AutonomousSourceRecordId
-        WHERE p.WorkspaceId=@workspace AND p.ProductionId=@id`
+        WHERE p.WorkspaceId=@workspace
+          AND p.Status NOT IN (N'archived', N'cancelled')
+        ORDER BY
+          CASE
+            WHEN p.Stage IN (N'research', N'scripting') THEN 0
+            WHEN p.Stage=N'storyboard' THEN 1
+            ELSE 2
+          END,
+          p.UpdatedAt DESC`
     );
-  return result.recordset[0] ?? null;
+    return result.recordset;
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("AutonomousSourceRecordId")) throw error;
+    const fallback = await pool.request().input("workspace", workspace).query<ProductionRow>(
+      `SELECT TOP(40)
+          CONVERT(nvarchar(36),p.ProductionId) id,
+          p.Code code,
+          p.Title title,
+          p.ProductionType type,
+          p.Stage stage,
+          p.Status status,
+          p.Progress progress,
+          p.Priority priority,
+          CONVERT(nvarchar(40),p.UpdatedAt,127) updatedAt,
+          p.MetadataJson metadataJson,
+          CAST(NULL AS nvarchar(36)) sourceRecordId,
+          CAST(NULL AS nvarchar(300)) sourceTitle,
+          CAST(NULL AS nvarchar(2000)) sourceDescription
+        FROM cacsms.Productions p
+        WHERE p.WorkspaceId=@workspace
+          AND p.Status NOT IN (N'archived', N'cancelled')
+        ORDER BY
+          CASE
+            WHEN p.Stage IN (N'research', N'scripting') THEN 0
+            WHEN p.Stage=N'storyboard' THEN 1
+            ELSE 2
+          END,
+          p.UpdatedAt DESC`
+    );
+    return fallback.recordset;
+  }
+}
+
+async function loadProductionRow(pool: sql.ConnectionPool, workspace: string, productionId: string) {
+  try {
+    const result = await pool
+      .request()
+      .input("workspace", workspace)
+      .input("id", sql.NVarChar(36), productionId)
+      .query<ProductionRow>(
+        `SELECT TOP(1)
+            CONVERT(nvarchar(36),p.ProductionId) id,
+            p.Code code,
+            p.Title title,
+            p.ProductionType type,
+            p.Stage stage,
+            p.Status status,
+            p.Progress progress,
+            p.Priority priority,
+            CONVERT(nvarchar(40),p.UpdatedAt,127) updatedAt,
+            p.MetadataJson metadataJson,
+            CONVERT(nvarchar(36),p.AutonomousSourceRecordId) sourceRecordId,
+            source.Title sourceTitle,
+            source.Description sourceDescription
+          FROM cacsms.Productions p
+          LEFT JOIN cacsms.OpportunityOperationalRecords source ON source.RecordId=p.AutonomousSourceRecordId
+          WHERE p.WorkspaceId=@workspace AND p.ProductionId=@id`
+      );
+    return result.recordset[0] ?? null;
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("AutonomousSourceRecordId")) throw error;
+    const fallback = await pool
+      .request()
+      .input("workspace", workspace)
+      .input("id", sql.NVarChar(36), productionId)
+      .query<ProductionRow>(
+        `SELECT TOP(1)
+            CONVERT(nvarchar(36),p.ProductionId) id,
+            p.Code code,
+            p.Title title,
+            p.ProductionType type,
+            p.Stage stage,
+            p.Status status,
+            p.Progress progress,
+            p.Priority priority,
+            CONVERT(nvarchar(40),p.UpdatedAt,127) updatedAt,
+            p.MetadataJson metadataJson,
+            CAST(NULL AS nvarchar(36)) sourceRecordId,
+            CAST(NULL AS nvarchar(300)) sourceTitle,
+            CAST(NULL AS nvarchar(2000)) sourceDescription
+          FROM cacsms.Productions p
+          WHERE p.WorkspaceId=@workspace AND p.ProductionId=@id`
+      );
+    return fallback.recordset[0] ?? null;
+  }
 }
 
 async function loadLatestRun(pool: sql.ConnectionPool, productionId: string) {
-  const result = await pool.request().input("production", sql.UniqueIdentifier, productionId).query<RunRow>(
+  const result = await pool.request().input("production", sql.NVarChar(36), productionId).query<RunRow>(
     `SELECT TOP(1)
         CONVERT(nvarchar(36),ScriptWritingRunId) id,
         CONVERT(nvarchar(36),JobId) jobId,
@@ -466,7 +639,7 @@ async function loadLatestRun(pool: sql.ConnectionPool, productionId: string) {
 }
 
 async function loadSections(pool: sql.ConnectionPool, runId: string) {
-  const result = await pool.request().input("run", sql.UniqueIdentifier, runId).query<SectionRow>(
+  const result = await pool.request().input("run", sql.NVarChar(36), runId).query<SectionRow>(
     `SELECT
         CONVERT(nvarchar(36),ProductionScriptSectionId) id,
         SectionKey [key],
@@ -485,7 +658,7 @@ async function loadSections(pool: sql.ConnectionPool, runId: string) {
 }
 
 async function loadSources(pool: sql.ConnectionPool, runId: string) {
-  const result = await pool.request().input("run", sql.UniqueIdentifier, runId).query<SourceRow>(
+  const result = await pool.request().input("run", sql.NVarChar(36), runId).query<SourceRow>(
     `SELECT
         CONVERT(nvarchar(36),ProductionScriptEvidenceId) id,
         CONVERT(nvarchar(36),ProductionScriptSectionId) sectionId,
@@ -504,7 +677,7 @@ async function loadSources(pool: sql.ConnectionPool, runId: string) {
 }
 
 async function loadVersions(pool: sql.ConnectionPool, runId: string) {
-  const result = await pool.request().input("run", sql.UniqueIdentifier, runId).query<VersionRow>(
+  const result = await pool.request().input("run", sql.NVarChar(36), runId).query<VersionRow>(
     `SELECT
         CONVERT(nvarchar(36),ProductionScriptVersionId) id,
         AttemptNumber attemptNumber,
@@ -521,7 +694,7 @@ async function loadVersions(pool: sql.ConnectionPool, runId: string) {
 }
 
 async function loadChecks(pool: sql.ConnectionPool, runId: string) {
-  const result = await pool.request().input("run", sql.UniqueIdentifier, runId).query<CheckRow>(
+  const result = await pool.request().input("run", sql.NVarChar(36), runId).query<CheckRow>(
     `SELECT
         ProductionScriptCheckId id,
         AttemptNumber attemptNumber,
@@ -538,7 +711,7 @@ async function loadChecks(pool: sql.ConnectionPool, runId: string) {
 }
 
 async function loadDecisions(pool: sql.ConnectionPool, runId: string) {
-  const result = await pool.request().input("run", sql.UniqueIdentifier, runId).query<DecisionRow>(
+  const result = await pool.request().input("run", sql.NVarChar(36), runId).query<DecisionRow>(
     `SELECT TOP(24)
         ProductionScriptDecisionId id,
         Step step,
@@ -602,16 +775,29 @@ function mapAuditEvent(row: AuditRow): ScriptAuditView {
   };
 }
 
-async function buildSnapshot(pool: sql.ConnectionPool, settings: SettingsRow, row: ProductionRow): Promise<ScriptEditorProduction> {
+async function buildSnapshot(
+  pool: sql.ConnectionPool,
+  settings: SettingsRow,
+  row: ProductionRow,
+  schemaReady: boolean
+): Promise<ScriptEditorProduction> {
   const metadata = parseJson(row.metadataJson);
-  const latestRun = await loadLatestRun(pool, row.id);
-  const sections = latestRun ? await loadSections(pool, latestRun.id) : [];
-  const sources = latestRun ? await loadSources(pool, latestRun.id) : [];
-  const versions = latestRun ? await loadVersions(pool, latestRun.id) : [];
-  const checks = latestRun ? await loadChecks(pool, latestRun.id) : [];
-  const decisions = latestRun ? await loadDecisions(pool, latestRun.id) : [];
+  const metadataBody = sanitizeText(metadata.scriptBody);
+  const latestRun = schemaReady ? await loadLatestRun(pool, row.id) : null;
+  const sections =
+    latestRun && schemaReady ? await loadSections(pool, latestRun.id) : metadataSections(metadata);
+  const sources =
+    latestRun && schemaReady ? await loadSources(pool, latestRun.id) : metadataSources(metadata);
+  const versions =
+    latestRun && schemaReady ? await loadVersions(pool, latestRun.id) : metadataVersions(metadata, metadataBody);
+  const checks =
+    latestRun && schemaReady ? await loadChecks(pool, latestRun.id) : metadataChecks(metadata);
+  const decisions = latestRun && schemaReady ? await loadDecisions(pool, latestRun.id) : [];
   const audit = await loadAudit(pool, row.id);
-  const body = versions[0]?.content ?? sections.map((section) => sanitizeText(section.content)).filter(Boolean).join("\n\n");
+  const body =
+    versions[0]?.content ??
+    metadataBody ??
+    sections.map((section) => sanitizeText(section.content)).filter(Boolean).join("\n\n");
   const scriptTitle = titleFromMetadata(row, metadata);
   const brief = briefFromMetadata(row, metadata);
   const requiredSectionKeys = new Set(SECTION_BLUEPRINT.map((section) => section.key));
@@ -638,7 +824,10 @@ async function buildSnapshot(pool: sql.ConnectionPool, settings: SettingsRow, ro
   const briefValid = brief.length >= settings.MinimumBriefLength;
   const researchReady = sources.length >= settings.MinimumResearchSources;
   const mandatory = briefValid && researchReady && sectionReady && versionReady && qualityReady;
-  const executionState = latestRun?.status ?? deriveFallbackState({
+  const executionState =
+    latestRun?.status ??
+    asWritingState(metadata.assistantState) ??
+    deriveFallbackState({
     briefValid,
     sources: sources.length,
     sectionsReady: sectionReady,
@@ -659,7 +848,7 @@ async function buildSnapshot(pool: sql.ConnectionPool, settings: SettingsRow, ro
       threshold: Number(settings.QualityThreshold)
     },
     executionState,
-    latestRun?.retryCount ?? 0
+        latestRun?.retryCount ?? 0
   );
   const startedAt = latestRun?.startedAt ?? null;
   const elapsedSeconds = startedAt ? Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 1000)) : null;
@@ -705,6 +894,7 @@ async function buildSnapshot(pool: sql.ConnectionPool, settings: SettingsRow, ro
       id: version.id,
       attemptNumber: Number(version.attemptNumber),
       label: version.label,
+      content: sanitizeText(version.content),
       wordCount: Number(version.wordCount),
       qualityScore: Number(version.qualityScore),
       createdAt: version.createdAt
@@ -731,7 +921,11 @@ async function buildSnapshot(pool: sql.ConnectionPool, settings: SettingsRow, ro
       state: executionState,
       currentAction:
         latestRun?.currentAction ??
-        (mandatory ? "Writing gates passed and the production is ready for the next pipeline stage." : "Waiting for the autonomous writing engine."),
+        (!schemaReady
+          ? "Autonomous script writing schema is unavailable. Displaying metadata-backed telemetry until migration 031 is applied."
+          : mandatory
+          ? "Writing gates passed and the production is ready for the next pipeline stage."
+          : "Waiting for the autonomous writing engine."),
       currentAgent: latestRun?.currentAgentName ?? null,
       currentRole: latestRun?.currentAgentRole ?? null,
       model: latestRun?.modelName ?? null,
@@ -740,13 +934,20 @@ async function buildSnapshot(pool: sql.ConnectionPool, settings: SettingsRow, ro
       elapsedSeconds,
       retries: latestRun?.retryCount ?? 0,
       blocker:
-        latestRun?.blockerCode || latestRun?.blockerMessage
+        !schemaReady
+          ? {
+              code: "schema-unavailable",
+              message: "Migration 031 has not been applied to this database yet, so persisted writing runs are unavailable."
+            }
+          : latestRun?.blockerCode || latestRun?.blockerMessage
           ? {
               code: latestRun?.blockerCode ?? "unknown",
               message: latestRun?.blockerMessage ?? "The writing engine is waiting for a recoverable dependency."
             }
           : null,
-      nextAction: latestRun?.nextAction ?? null
+      nextAction:
+        latestRun?.nextAction ??
+        (!schemaReady ? "Apply database migration 031 to activate persisted autonomous writing orchestration." : null)
     },
     gates: {
       brief: briefValid,
@@ -778,8 +979,8 @@ async function persistDecision(
 ) {
   await pool
     .request()
-    .input("run", sql.UniqueIdentifier, runId)
-    .input("production", sql.UniqueIdentifier, productionId)
+    .input("run", sql.NVarChar(36), runId)
+    .input("production", sql.NVarChar(36), productionId)
     .input("step", sql.NVarChar(80), step)
     .input("action", sql.NVarChar(120), action)
     .input("outcome", sql.NVarChar(80), outcome)
@@ -800,7 +1001,7 @@ async function persistAudit(
 ) {
   await pool
     .request()
-    .input("workspace", sql.UniqueIdentifier, workspaceId)
+    .input("workspace", workspaceId)
     .input("eventType", sql.NVarChar(150), eventType)
     .input("entityId", sql.NVarChar(100), productionId)
     .input("payload", sql.NVarChar(sql.MAX), JSON.stringify(payload))
@@ -821,7 +1022,7 @@ async function upsertAgentRun(
 ) {
   await pool
     .request()
-    .input("production", sql.UniqueIdentifier, productionId)
+    .input("production", sql.NVarChar(36), productionId)
     .input("name", sql.NVarChar(200), name)
     .input("role", sql.NVarChar(100), role)
     .input("task", sql.NVarChar(300), task)
@@ -859,8 +1060,8 @@ async function upsertAgentRun(
 async function createRun(pool: sql.ConnectionPool, workspaceId: string, productionId: string, triggerSource: string, initialState: WritingState) {
   const result = await pool
     .request()
-    .input("workspace", sql.UniqueIdentifier, workspaceId)
-    .input("production", sql.UniqueIdentifier, productionId)
+    .input("workspace", workspaceId)
+    .input("production", sql.NVarChar(36), productionId)
     .input("trigger", sql.NVarChar(40), triggerSource.slice(0, 40))
     .input("status", sql.NVarChar(30), initialState)
     .query<{ id: string }>(
@@ -902,7 +1103,7 @@ async function updateRun(
 ) {
   await pool
     .request()
-    .input("run", sql.UniqueIdentifier, runId)
+    .input("run", sql.NVarChar(36), runId)
     .input("status", sql.NVarChar(30), patch.status ?? null)
     .input("action", sql.NVarChar(200), patch.currentAction ?? null)
     .input("agentName", sql.NVarChar(200), patch.currentAgentName ?? null)
@@ -999,7 +1200,7 @@ async function updateProductionMetadata(
 
   await pool
     .request()
-    .input("id", sql.UniqueIdentifier, row.id)
+    .input("id", sql.NVarChar(36), row.id)
     .input("metadata", sql.NVarChar(sql.MAX), JSON.stringify(nextMetadata))
     .query(`UPDATE cacsms.Productions SET MetadataJson=@metadata,UpdatedAt=SYSUTCDATETIME() WHERE ProductionId=@id`);
 }
@@ -1016,7 +1217,7 @@ async function reconcileProductionState(
 
   await pool
     .request()
-    .input("production", sql.UniqueIdentifier, row.id)
+    .input("production", sql.NVarChar(36), row.id)
     .input("stage", sql.NVarChar(100), nextStage)
     .input("status", sql.NVarChar(30), nextStatus)
     .input("progress", sql.TinyInt, nextProgress)
@@ -1071,7 +1272,7 @@ function scoreCandidate(candidate: KnowledgeCandidate, tokens: string[]) {
 }
 
 async function findResearchCandidates(pool: sql.ConnectionPool, workspaceId: string) {
-  const result = await pool.request().input("workspace", sql.UniqueIdentifier, workspaceId).query<KnowledgeCandidate>(
+  const result = await pool.request().input("workspace", workspaceId).query<KnowledgeCandidate>(
     `SELECT TOP(120)
         CONVERT(nvarchar(36),KnowledgeRecordId) id,
         Title title,
@@ -1115,9 +1316,9 @@ async function ensureResearchSources(
       const citation = `[${index + 1}] ${candidate.title} - ${candidate.source} (${Math.round(candidate.confidence)}% confidence)`;
       await pool
         .request()
-        .input("run", sql.UniqueIdentifier, runId)
-        .input("production", sql.UniqueIdentifier, row.id)
-        .input("record", sql.UniqueIdentifier, candidate.id)
+        .input("run", sql.NVarChar(36), runId)
+        .input("production", sql.NVarChar(36), row.id)
+        .input("record", sql.NVarChar(36), candidate.id)
         .input("citation", sql.NVarChar(500), citation)
         .input("title", sql.NVarChar(300), candidate.title)
         .input("status", sql.NVarChar(30), candidate.status)
@@ -1139,11 +1340,11 @@ async function ensureResearchSources(
   if (row.sourceDescription) {
     await pool
       .request()
-      .input("run", sql.UniqueIdentifier, runId)
-      .input("production", sql.UniqueIdentifier, row.id)
+      .input("run", sql.NVarChar(36), runId)
+      .input("production", sql.NVarChar(36), row.id)
       .input("citation", sql.NVarChar(500), `[S] ${row.sourceTitle ?? row.title} - opportunity intelligence source record`)
       .input("title", sql.NVarChar(300), row.sourceTitle ?? row.title)
-      .input("status", sql.NVarChar(30), N"verified")
+      .input("status", sql.NVarChar(30), "verified")
       .input("confidence", sql.Decimal(5, 2), 88)
       .input("evidence", sql.NVarChar(2000), sanitizeText(row.sourceDescription, 2000))
       .query(
@@ -1214,14 +1415,14 @@ async function writeSectionsAndVersion(
     };
   });
 
-  await pool.request().input("run", sql.UniqueIdentifier, run.id).query(`DELETE FROM cacsms.ProductionScriptSections WHERE ScriptWritingRunId=@run`);
+  await pool.request().input("run", sql.NVarChar(36), run.id).query(`DELETE FROM cacsms.ProductionScriptSections WHERE ScriptWritingRunId=@run`);
 
   for (let index = 0; index < sections.length; index += 1) {
     const section = sections[index];
     const inserted = await pool
       .request()
-      .input("run", sql.UniqueIdentifier, run.id)
-      .input("production", sql.UniqueIdentifier, row.id)
+      .input("run", sql.NVarChar(36), run.id)
+      .input("production", sql.NVarChar(36), row.id)
       .input("key", sql.NVarChar(80), section.key)
       .input("title", sql.NVarChar(200), section.title)
       .input("sequence", sql.TinyInt, index + 1)
@@ -1240,8 +1441,8 @@ async function writeSectionsAndVersion(
     for (const source of chooseEvidenceForSection(sources, index)) {
       await pool
         .request()
-        .input("section", sql.UniqueIdentifier, inserted.recordset[0].id)
-        .input("evidence", sql.UniqueIdentifier, source.id)
+        .input("section", sql.NVarChar(36), inserted.recordset[0].id)
+        .input("evidence", sql.NVarChar(36), source.id)
         .query(`UPDATE cacsms.ProductionScriptEvidence SET ProductionScriptSectionId=@section WHERE ProductionScriptEvidenceId=@evidence`);
     }
   }
@@ -1251,8 +1452,8 @@ async function writeSectionsAndVersion(
 
   await pool
     .request()
-    .input("run", sql.UniqueIdentifier, run.id)
-    .input("production", sql.UniqueIdentifier, row.id)
+    .input("run", sql.NVarChar(36), run.id)
+    .input("production", sql.NVarChar(36), row.id)
     .input("attempt", sql.Int, attemptNumber)
     .input("label", sql.NVarChar(200), attemptNumber === 1 ? "Autonomous evidence draft" : `Autonomous revision ${attemptNumber - 1}`)
     .input("content", sql.NVarChar(sql.MAX), content)
@@ -1331,8 +1532,8 @@ async function persistChecks(
   for (const check of checks) {
     await pool
       .request()
-      .input("run", sql.UniqueIdentifier, runId)
-      .input("production", sql.UniqueIdentifier, productionId)
+      .input("run", sql.NVarChar(36), runId)
+      .input("production", sql.NVarChar(36), productionId)
       .input("attempt", sql.Int, attemptNumber)
       .input("type", sql.NVarChar(40), check.type)
       .input("status", sql.NVarChar(30), check.status)
@@ -1354,16 +1555,22 @@ function determineRevisionHint(checks: ReturnType<typeof evaluateChecks>["checks
   return failing?.notes ?? "Strengthen evidence traceability and editorial clarity.";
 }
 
-async function refreshProductionSnapshot(pool: sql.ConnectionPool, settings: SettingsRow, workspaceId: string, productionId: string) {
+async function refreshProductionSnapshot(
+  pool: sql.ConnectionPool,
+  settings: SettingsRow,
+  workspaceId: string,
+  productionId: string,
+  schemaReady: boolean
+) {
   const row = await loadProductionRow(pool, workspaceId, productionId);
   if (!row) throw new Error("Production not found.");
-  return buildSnapshot(pool, settings, row);
+  return buildSnapshot(pool, settings, row, schemaReady);
 }
 
 export async function getScriptEditorData(): Promise<ScriptEditorPayload> {
-  const { pool, settings } = await getContext();
+  const { pool, settings, schemaReady } = await getContext();
   const rows = await loadProductions(pool, settings.WorkspaceId);
-  const productions = await Promise.all(rows.map((row) => buildSnapshot(pool, settings, row)));
+  const productions = await Promise.all(rows.map((row) => buildSnapshot(pool, settings, row, schemaReady)));
   return {
     productions,
     generatedAt: new Date().toISOString(),
@@ -1373,9 +1580,12 @@ export async function getScriptEditorData(): Promise<ScriptEditorPayload> {
 }
 
 export async function runScriptEditorAutomation(productionId: string, action: "sync" | "retry" = "sync") {
-  const { pool, settings } = await getContext();
+  const { pool, settings, schemaReady } = await getContext();
   const row = await loadProductionRow(pool, settings.WorkspaceId, productionId);
   if (!row) throw new Error("Production not found.");
+  if (!schemaReady) {
+    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, false);
+  }
 
   let run = await loadLatestRun(pool, productionId);
   if (!run) {
@@ -1385,7 +1595,7 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
       message: "Created a persisted writing job.",
       status: "waiting"
     });
-    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
   }
 
   if ((run.status === "blocked" || run.status === "failed") && action === "retry") {
@@ -1395,11 +1605,11 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
       message: "Created a retry run.",
       status: "retrying"
     });
-    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
   }
 
   if ((run.status === "blocked" || run.status === "failed" || run.status === "completed") && action === "sync") {
-    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
   }
 
   try {
@@ -1443,7 +1653,7 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
         });
         await reconcileProductionState(pool, row, "research", "active", 18, "Writing workflow is retrieving verified research.");
       }
-      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
     }
 
     if (run.status === "researching") {
@@ -1495,7 +1705,7 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
         });
         await reconcileProductionState(pool, row, "scripting", "active", 26, "Writing queued from verified research.");
       }
-      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
     }
 
     if (run.status === "queued") {
@@ -1514,7 +1724,7 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
         status: "generating"
       });
       await reconcileProductionState(pool, row, "scripting", "active", 32, "Writing is generating the script sections.");
-      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
     }
 
     if (run.status === "generating") {
@@ -1546,7 +1756,7 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
         status: "reviewing"
       });
       await reconcileProductionState(pool, row, "scripting", "active", 38, "Writing draft persisted and under review.");
-      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
     }
 
     if (run.status === "reviewing") {
@@ -1570,7 +1780,7 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
       if (evaluation.average >= settings.QualityThreshold && evaluation.checks.every((check) => check.status !== "failed")) {
         await pool
           .request()
-          .input("run", sql.UniqueIdentifier, run.id)
+          .input("run", sql.NVarChar(36), run.id)
           .input("quality", sql.Decimal(5, 2), evaluation.average)
           .query(
             `UPDATE cacsms.ProductionScriptVersions
@@ -1665,7 +1875,7 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
         });
         await reconcileProductionState(pool, row, "scripting", "blocked", 36, "Writing failed the mandatory gates and requires recovery.");
       }
-      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
     }
 
     if (run.status === "revising") {
@@ -1704,10 +1914,10 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
         status: "reviewing"
       });
       await reconcileProductionState(pool, row, "scripting", "active", 42, "Writing revision persisted and under review.");
-      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
     }
 
-    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId);
+    return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Autonomous script writing failed.";
     await updateRun(pool, run.id, {
@@ -1732,7 +1942,10 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
 }
 
 export async function runScriptWritingScheduler() {
-  const { pool, settings } = await getContext();
+  const { pool, settings, schemaReady } = await getContext();
+  if (!schemaReady) {
+    return getScriptEditorData();
+  }
   const productions = await loadProductions(pool, settings.WorkspaceId);
 
   for (const prod of productions) {
@@ -1747,3 +1960,4 @@ export async function runScriptWritingScheduler() {
 
   return getScriptEditorData();
 }
+

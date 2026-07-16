@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getExecutiveDashboardData, setExecutivePlatformState } from "@/lib/executive-dashboard-data";
+import { requireMutationAccess } from "@/app/api/_utils/write-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireMutationAccess(request);
+  if (denied) {
+    return denied;
+  }
+
   let body: { action?: string; workspaceId?: string };
   try {
     body = await request.json();

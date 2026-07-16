@@ -5,10 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start --hostname 0.0.0.0 --port 3008",
+    "start": "node .next/standalone/apps/web/server.js",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --noEmit"
+    "test": "tsx --test \"lib/**/*.test.ts\""
   },
   "dependencies": {
     "@cacsms/contracts": "workspace:*",
@@ -23,6 +23,7 @@
     "@types/node": "^22.15.30",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }
 }

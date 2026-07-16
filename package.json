@@ -8,7 +8,7 @@
     "dev:web": "pnpm --filter @cacsms/web dev -- --hostname 0.0.0.0 --port 3008",
     "build": "turbo build",
     "build:web": "pnpm --filter @cacsms/web build",
-    "start": "node server.js",
+    "start": "set NODE_ENV=production&& set PORT=3018&& set CACSMS_PUBLIC_PORT=3008&& node server.js",
     "start:iis-node": "set NODE_ENV=production&& set PORT=3018&& set CACSMS_PUBLIC_PORT=3008&& node server.js",
     "start:web": "pnpm --filter @cacsms/web start",
     "iis:install": "powershell -ExecutionPolicy Bypass -File infrastructure/deployment/iis/install-iis-site.ps1",

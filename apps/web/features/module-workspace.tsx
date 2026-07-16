@@ -57,6 +57,8 @@ import { AutonomousPublishingSchedulerPage } from "@/features/publishing/Autonom
 import { AutonomousAssignmentsPage } from "@/features/collaboration/AutonomousAssignmentsPage";
 import { ScriptEditorWorkspace } from "@/features/writing/ScriptEditorWorkspace";
 import { getScriptEditorData } from "@/lib/script-editor-data";
+import { AutonomousImageGeneratorWorkspace } from "@/features/visuals/AutonomousImageGeneratorWorkspace";
+import { getImageGeneratorData } from "@/lib/image-generator-data";
 
 export async function ModuleWorkspace({
   moduleSlug,
@@ -151,10 +153,22 @@ export async function ModuleWorkspace({
   if (module.slug === "writing" && workspace?.slug === "script-editor") {
     try {
       const data = await getScriptEditorData();
-      return <ScriptEditorWorkspace initial={data.productions} />;
+      return <ScriptEditorWorkspace initial={data} />;
     } catch (error) {
       console.error("writing.script-editor.load.failed", error);
       return <ScriptEditorWorkspace error="The MSSQL production store is unavailable. Script editing will recover automatically when the connection returns." />;
+    }
+  }
+
+  if (module.slug === "visuals" && workspace?.slug === "image-generator") {
+    try {
+      const data = await getImageGeneratorData();
+      return <AutonomousImageGeneratorWorkspace initial={data} />;
+    } catch (error) {
+      console.error("visuals.image-generator.load.failed", error);
+      return (
+        <AutonomousImageGeneratorWorkspace error="The MSSQL production store is unavailable. Visual generation will recover automatically when the connection returns." />
+      );
     }
   }
 

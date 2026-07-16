@@ -22,11 +22,14 @@ const moduleFlowDir = path.join(webDir, "public", "module-flow");
 const moduleFlowIndexPath = path.join(moduleFlowDir, "index.html");
 const moduleFlowStylesPath = path.join(moduleFlowDir, "styles.css");
 const sharedSidebarPath = path.join(webDir, "public", "shared-sidebar.js");
+const standaloneWebDir = path.join(webDir, ".next", "standalone", "apps", "web");
+const standaloneServerPath = path.join(webDir, ".next", "standalone", "apps", "web", "server.js");
 const webRequire = createRequire(path.join(webDir, "package.json"));
 
 const hostname = process.env.HOSTNAME || "0.0.0.0";
 const port = process.env.PORT || 3018;
-const dev = process.env.NODE_ENV !== "production";
+// Default the custom host to production unless development is explicit.
+const dev = process.env.NODE_ENV === "development";
 const isNamedPipe = typeof port === "string" && Number.isNaN(Number(port));
 let next;
 
@@ -66,7 +69,13 @@ function loadWebEnvironment(directory) {
   }
 }
 
-if (next) {
+if (!dev && !isNamedPipe && fs.existsSync(standaloneServerPath)) {
+  syncStandaloneRuntimeAssets();
+  process.env.PORT = String(port);
+  process.env.HOSTNAME = hostname;
+  require(standaloneServerPath);
+  onServerReady();
+} else if (next) {
   const app = next({ dev, dir: webDir, hostname, port });
   const handle = app.getRequestHandler();
 
@@ -77,31 +86,53 @@ if (next) {
   listen(http.createServer(handleFallbackRequest));
 }
 
+function syncStandaloneRuntimeAssets() {
+  syncRuntimeDirectory(path.join(webDir, ".next", "static"), path.join(standaloneWebDir, ".next", "static"));
+  syncRuntimeDirectory(path.join(webDir, "public"), path.join(standaloneWebDir, "public"));
+}
+
+function syncRuntimeDirectory(sourceDir, targetDir) {
+  if (!fs.existsSync(sourceDir)) return;
+
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  fs.cpSync(sourceDir, targetDir, { recursive: true });
+}
+
 function listen(server) {
   if (isNamedPipe) {
     server.listen(port, () => {
-      console.log(`CACSMS Studio listening on IIS pipe ${port}`);
+      onServerReady();
     });
     return;
   }
 
   server.listen(Number(port), hostname, () => {
-    console.log(`CACSMS Studio listening on ${hostname}:${port}`);
-    startAutonomousKnowledgeScheduler();
-    startAutonomousOpportunityScoringScheduler();
-    startAutonomousOpportunityPortfolioScheduler();
-    startAutonomousEditorialScheduler();
-    startAutonomousExecutiveRecommendationScheduler();
-    startAutonomousKnowledgeQualityScheduler();
-    startAutonomousProductionOrchestrationScheduler();
-    startAutonomousMultiFormatPlannerScheduler();
-    startAutonomousCampaignBuilderScheduler();
-    startAutonomousEvergreenKnowledgeScheduler();
-    startAutonomousTemplateIntelligenceScheduler();
-    startAutonomousOpportunityScheduler();
-    startAutonomousStoryStructureScheduler();
-    startAutonomousScriptWritingScheduler();
+    onServerReady();
   });
+}
+
+function onServerReady() {
+  if (isNamedPipe) {
+    console.log(`CACSMS Studio listening on IIS pipe ${port}`);
+  } else {
+    console.log(`CACSMS Studio listening on ${hostname}:${port}`);
+  }
+  startAutonomousKnowledgeScheduler();
+  startAutonomousOpportunityScoringScheduler();
+  startAutonomousOpportunityPortfolioScheduler();
+  startAutonomousEditorialScheduler();
+  startAutonomousExecutiveRecommendationScheduler();
+  startAutonomousKnowledgeQualityScheduler();
+  startAutonomousProductionOrchestrationScheduler();
+  startAutonomousMultiFormatPlannerScheduler();
+  startAutonomousCampaignBuilderScheduler();
+  startAutonomousEvergreenKnowledgeScheduler();
+  startAutonomousTemplateIntelligenceScheduler();
+  startAutonomousOpportunityScheduler();
+  startAutonomousStoryStructureScheduler();
+  startAutonomousScriptWritingScheduler();
+  startAutonomousImageGenerationScheduler();
 }
 
 function startAutonomousScriptWritingScheduler() {
@@ -121,6 +152,26 @@ function startAutonomousScriptWritingScheduler() {
     }
   };
   setTimeout(run, 35_000).unref();
+  setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousImageGenerationScheduler() {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env.CACSMS_IMAGE_GENERATION_INTERVAL_MS || 45_000));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/visuals/image-generator`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
+        body: JSON.stringify({ action: "scheduler" }),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error("image-generation.scheduler.failed", { status: response.status });
+    } catch (error) {
+      console.error("image-generation.scheduler.failed", { name: error instanceof Error ? error.name : "Unknown" });
+    }
+  };
+  setTimeout(run, 39_000).unref();
   setInterval(run, intervalMs).unref();
 }
 

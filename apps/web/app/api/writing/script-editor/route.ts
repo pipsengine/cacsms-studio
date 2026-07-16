@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getScriptEditorData, runScriptEditorAutomation, runScriptWritingScheduler } from "@/lib/script-editor-engine";
+import { requireMutationAccess } from "@/app/api/_utils/write-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,12 +19,17 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const denied = requireMutationAccess(request);
+  if (denied) {
+    return denied;
+  }
+
   try {
     const body = (await request.json().catch(() => ({}))) as {
       productionId?: string;
       action?: "sync" | "retry" | "scheduler";
     };
-    
+
     if (body.action === "scheduler") {
       const payload = await runScriptWritingScheduler();
       return NextResponse.json(payload, {

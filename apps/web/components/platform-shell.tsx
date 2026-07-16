@@ -105,6 +105,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     navigationModules.find((module) => module.slug === "dashboard");
   const [openModule, setOpenModule] = useState<string | null>(activeModule?.slug ?? "dashboard");
   const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname.startsWith("/home/") || pathname.startsWith("/production-studio") || pathname.startsWith("/content-intelligence") || pathname.startsWith("/opportunity-intelligence");
+  const hideWorkspaceHeader = pathname.startsWith("/writing/script-editor") || pathname.startsWith("/visuals/image-generator");
   const groupedModules = useMemo(
     () =>
       moduleGroups.map((group) => ({
@@ -243,7 +244,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
             </span>
           </div>
         </header>
-        {!dashboardRoute ? (
+        {!dashboardRoute && !hideWorkspaceHeader ? (
           <header className="topbar">
             <div>
               <h1>CACSMS Autonomous Media Studio</h1>
