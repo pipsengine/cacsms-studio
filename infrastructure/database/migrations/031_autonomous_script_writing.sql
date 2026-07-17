@@ -83,7 +83,7 @@ BEGIN TRY
       UpdatedAt datetimeoffset(0) NOT NULL CONSTRAINT DF_ProductionScriptSections_UpdatedAt DEFAULT SYSUTCDATETIME(),
       CompletedAt datetimeoffset(0) NULL,
       CONSTRAINT FK_ProductionScriptSections_Runs FOREIGN KEY (ScriptWritingRunId) REFERENCES cacsms.ScriptWritingRuns(ScriptWritingRunId) ON DELETE CASCADE,
-      CONSTRAINT FK_ProductionScriptSections_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId) ON DELETE CASCADE,
+      CONSTRAINT FK_ProductionScriptSections_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId),
       CONSTRAINT UQ_ProductionScriptSections_Run_SectionKey UNIQUE (ScriptWritingRunId, SectionKey),
       CONSTRAINT CK_ProductionScriptSections_Status CHECK (Status IN (N'waiting', N'queued', N'generating', N'reviewing', N'revising', N'blocked', N'failed', N'completed')),
       CONSTRAINT CK_ProductionScriptSections_WordCount CHECK (WordCount >= 0),
@@ -104,7 +104,7 @@ BEGIN TRY
       EvidenceText nvarchar(2000) NOT NULL,
       CreatedAt datetimeoffset(0) NOT NULL CONSTRAINT DF_ProductionScriptEvidence_CreatedAt DEFAULT SYSUTCDATETIME(),
       CONSTRAINT FK_ProductionScriptEvidence_Runs FOREIGN KEY (ScriptWritingRunId) REFERENCES cacsms.ScriptWritingRuns(ScriptWritingRunId) ON DELETE CASCADE,
-      CONSTRAINT FK_ProductionScriptEvidence_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId) ON DELETE CASCADE,
+      CONSTRAINT FK_ProductionScriptEvidence_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId),
       CONSTRAINT FK_ProductionScriptEvidence_Sections FOREIGN KEY (ProductionScriptSectionId) REFERENCES cacsms.ProductionScriptSections(ProductionScriptSectionId),
       CONSTRAINT FK_ProductionScriptEvidence_KnowledgeRecords FOREIGN KEY (KnowledgeRecordId) REFERENCES cacsms.KnowledgeRecords(KnowledgeRecordId),
       CONSTRAINT CK_ProductionScriptEvidence_Confidence CHECK (Confidence BETWEEN 0 AND 100)
@@ -122,7 +122,7 @@ BEGIN TRY
       QualityScore decimal(5,2) NOT NULL,
       CreatedAt datetimeoffset(0) NOT NULL CONSTRAINT DF_ProductionScriptVersions_CreatedAt DEFAULT SYSUTCDATETIME(),
       CONSTRAINT FK_ProductionScriptVersions_Runs FOREIGN KEY (ScriptWritingRunId) REFERENCES cacsms.ScriptWritingRuns(ScriptWritingRunId) ON DELETE CASCADE,
-      CONSTRAINT FK_ProductionScriptVersions_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId) ON DELETE CASCADE,
+      CONSTRAINT FK_ProductionScriptVersions_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId),
       CONSTRAINT CK_ProductionScriptVersions_AttemptNumber CHECK (AttemptNumber >= 1),
       CONSTRAINT CK_ProductionScriptVersions_WordCount CHECK (WordCount >= 0),
       CONSTRAINT CK_ProductionScriptVersions_QualityScore CHECK (QualityScore BETWEEN 0 AND 100)
@@ -140,7 +140,7 @@ BEGIN TRY
       Notes nvarchar(1000) NULL,
       CreatedAt datetimeoffset(0) NOT NULL CONSTRAINT DF_ProductionScriptChecks_CreatedAt DEFAULT SYSUTCDATETIME(),
       CONSTRAINT FK_ProductionScriptChecks_Runs FOREIGN KEY (ScriptWritingRunId) REFERENCES cacsms.ScriptWritingRuns(ScriptWritingRunId) ON DELETE CASCADE,
-      CONSTRAINT FK_ProductionScriptChecks_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId) ON DELETE CASCADE,
+      CONSTRAINT FK_ProductionScriptChecks_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId),
       CONSTRAINT CK_ProductionScriptChecks_AttemptNumber CHECK (AttemptNumber >= 1),
       CONSTRAINT CK_ProductionScriptChecks_Type CHECK (CheckType IN (N'factual', N'editorial', N'brand', N'safety', N'compliance')),
       CONSTRAINT CK_ProductionScriptChecks_Status CHECK (Status IN (N'passed', N'failed', N'warning')),
@@ -159,7 +159,7 @@ BEGIN TRY
       DataJson nvarchar(max) NULL,
       CreatedAt datetimeoffset(0) NOT NULL CONSTRAINT DF_ProductionScriptDecisions_CreatedAt DEFAULT SYSUTCDATETIME(),
       CONSTRAINT FK_ProductionScriptDecisions_Runs FOREIGN KEY (ScriptWritingRunId) REFERENCES cacsms.ScriptWritingRuns(ScriptWritingRunId) ON DELETE CASCADE,
-      CONSTRAINT FK_ProductionScriptDecisions_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId) ON DELETE CASCADE,
+      CONSTRAINT FK_ProductionScriptDecisions_Productions FOREIGN KEY (ProductionId) REFERENCES cacsms.Productions(ProductionId),
       CONSTRAINT CK_ProductionScriptDecisions_DataJson CHECK (DataJson IS NULL OR ISJSON(DataJson) = 1)
     );
     CREATE INDEX IX_ProductionScriptDecisions_Production_CreatedAt ON cacsms.ProductionScriptDecisions(ProductionId, CreatedAt DESC);

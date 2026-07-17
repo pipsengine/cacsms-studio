@@ -105,7 +105,13 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     navigationModules.find((module) => module.slug === "dashboard");
   const [openModule, setOpenModule] = useState<string | null>(activeModule?.slug ?? "dashboard");
   const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname.startsWith("/home/") || pathname.startsWith("/production-studio") || pathname.startsWith("/content-intelligence") || pathname.startsWith("/opportunity-intelligence");
-  const hideWorkspaceHeader = pathname.startsWith("/writing/script-editor") || pathname.startsWith("/visuals/image-generator");
+  const hideWorkspaceHeader =
+    pathname.startsWith("/writing/script-editor") ||
+    pathname.startsWith("/visuals/image-generator") ||
+    pathname.startsWith("/storyboard/storyboard-editor") ||
+    pathname.startsWith("/video/scene-video-generator") ||
+    pathname.startsWith("/audio/narration-generator") ||
+    pathname.startsWith("/audio/music-generator");
   const groupedModules = useMemo(
     () =>
       moduleGroups.map((group) => ({
@@ -152,7 +158,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <aside className="sidebar" aria-label="Studio navigation">
         <div className="brand-row">
-          <Link className="brand" href="/dashboard" aria-label="CACSMS dashboard">
+          <Link className="brand" href="/dashboard" prefetch={false} aria-label="CACSMS dashboard">
             <span className="brand-mark" aria-hidden="true">
               <span />
               <span />
@@ -192,7 +198,9 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
                   >
                     <summary className={`nav-item${isActive ? " active" : ""}`}>
                       <Icon size={16} aria-hidden="true" />
-                      <Link href={hrefForModule(module.slug)}>{module.label}</Link>
+                      <Link href={hrefForModule(module.slug)} prefetch={false}>
+                        {module.label}
+                      </Link>
                       <span className="nav-badge">{formatCount(module.children.length, module.slug)}</span>
                       {isOpen ? <ChevronDown className="nav-chevron" aria-hidden="true" /> : <ChevronRight className="nav-chevron" aria-hidden="true" />}
                     </summary>
@@ -201,6 +209,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
                         <Link
                           href={hrefForChild(module.slug, child.slug)}
                           key={child.slug}
+                          prefetch={false}
                           aria-current={isActiveChild(module.slug, child.slug, pathname) ? "page" : undefined}
                         >
                           {child.label}

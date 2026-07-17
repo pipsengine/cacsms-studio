@@ -26,7 +26,7 @@ const standaloneWebDir = path.join(webDir, ".next", "standalone", "apps", "web")
 const standaloneServerPath = path.join(webDir, ".next", "standalone", "apps", "web", "server.js");
 const webRequire = createRequire(path.join(webDir, "package.json"));
 
-const hostname = process.env.HOSTNAME || "0.0.0.0";
+const hostname = process.env.HOSTNAME && process.env.HOSTNAME.trim() ? process.env.HOSTNAME.trim() : null;
 const port = process.env.PORT || 3018;
 // Default the custom host to production unless development is explicit.
 const dev = process.env.NODE_ENV === "development";
@@ -72,11 +72,15 @@ function loadWebEnvironment(directory) {
 if (!dev && !isNamedPipe && fs.existsSync(standaloneServerPath)) {
   syncStandaloneRuntimeAssets();
   process.env.PORT = String(port);
-  process.env.HOSTNAME = hostname;
+  if (hostname) {
+    process.env.HOSTNAME = hostname;
+  } else {
+    delete process.env.HOSTNAME;
+  }
   require(standaloneServerPath);
   onServerReady();
 } else if (next) {
-  const app = next({ dev, dir: webDir, hostname, port });
+  const app = next({ dev, dir: webDir });
   const handle = app.getRequestHandler();
 
   app.prepare().then(() => {
@@ -107,9 +111,14 @@ function listen(server) {
     return;
   }
 
-  server.listen(Number(port), hostname, () => {
+  const onListen = () => {
     onServerReady();
-  });
+  };
+  if (hostname) {
+    server.listen(Number(port), hostname, onListen);
+    return;
+  }
+  server.listen(Number(port), onListen);
 }
 
 function onServerReady() {

@@ -1,4 +1,4 @@
-﻿import sql from "mssql";
+import sql from "mssql";
 import { getMssqlPool } from "@/lib/database/mssql";
 
 const WRITING_STATES = [
@@ -357,6 +357,39 @@ function briefFromMetadata(row: ProductionRow, metadata: Record<string, unknown>
     sanitizeText(metadata.creativeBrief, 2000) ||
     sanitizeText(metadata.description, 2000) ||
     sanitizeText(row.sourceDescription, 2000)
+  );
+}
+
+function synthesizeCreativeBrief(row: ProductionRow, metadata: Record<string, unknown>) {
+  const title = sanitizeText(row.title, 300) || "This production";
+  const type = sanitizeText(row.type, 120) || "content";
+  const sourceTitle = sanitizeText(row.sourceTitle, 240);
+  const sourceDescription =
+    sanitizeText(row.sourceDescription, 1200) ||
+    sanitizeText(metadata.description, 1200) ||
+    sanitizeText(metadata.summary, 1200);
+  const objectiveSeed = sanitizeText(metadata.objective, 400) || sanitizeText(metadata.goal, 400);
+  const audience =
+    sanitizeText(metadata.audience, 200) ||
+    (type.toLowerCase().includes("teaching")
+      ? "operators, technical teams, and decision-makers"
+      : type.toLowerCase().includes("marketing")
+        ? "buyers, executives, and market-facing teams"
+        : "decision-makers and professional audiences");
+  const tone =
+    sanitizeText(metadata.tone, 120) ||
+    (type.toLowerCase().includes("teaching") ? "clear, factual, and instructional" : "clear, credible, and insight-driven");
+  const outcome =
+    objectiveSeed ||
+    `explain why ${title.toLowerCase()} matters now, what evidence supports it, and what the audience should do next`;
+  const evidenceLine = sourceDescription
+    ? `Use this persisted context as the factual foundation: ${sourceDescription}`
+    : `Ground every major claim in verified research records retrieved from the workspace knowledge base.`;
+  const sourceLine = sourceTitle ? `Reference the originating opportunity record "${sourceTitle}" when framing the narrative.` : "";
+
+  return sanitizeText(
+    `${title} is a ${type.toLowerCase()} production for ${audience}. The script should maintain a ${tone} voice, open with the central opportunity, develop the strongest supporting evidence, and close with a practical call to action. The production objective is to ${outcome}. ${evidenceLine} ${sourceLine}`,
+    2000
   );
 }
 
@@ -1249,6 +1282,12 @@ async function ensureBrief(
   if (!brief && row.sourceDescription) {
     brief = sanitizeText(row.sourceDescription, 2000);
   }
+  if (brief.length < settings.MinimumBriefLength) {
+    const synthesized = synthesizeCreativeBrief(row, metadata);
+    if (synthesized.length > brief.length) {
+      brief = synthesized;
+    }
+  }
   if (brief.length >= settings.MinimumBriefLength) {
     await updateProductionMetadata(pool, row, {
       brief,
@@ -1608,7 +1647,57 @@ export async function runScriptEditorAutomation(productionId: string, action: "s
     return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
   }
 
-  if ((run.status === "blocked" || run.status === "failed" || run.status === "completed") && action === "sync") {
+  if ((run.status === "blocked" || run.status === "failed") && action === "sync") {
+    if (run.blockerCode === "missing-brief") {
+      const recoveredBrief = await ensureBrief(pool, row, settings);
+      if (recoveredBrief.length >= settings.MinimumBriefLength) {
+        await updateRun(pool, run.id, {
+          status: "waiting",
+          currentAction: "Recovered a persisted creative brief and resumed autonomous writing.",
+          currentAgentName: "Input Validation Agent",
+          currentAgentRole: "validation",
+          modelName: "CACSMS Brief Recovery Engine v1",
+          briefValid: true,
+          blockerCode: null,
+          blockerMessage: null,
+          errorMessage: null,
+          nextAction: "Validate required inputs before autonomous writing begins."
+        });
+        await persistDecision(
+          pool,
+          run.id,
+          productionId,
+          "recovery",
+          "recover-brief",
+          "completed",
+          "Recovered a persisted creative brief automatically and resumed the writing workflow."
+        );
+        await persistAudit(pool, settings.WorkspaceId, productionId, "writing.waiting", {
+          message: "Recovered a persisted creative brief automatically.",
+          status: "waiting"
+        });
+        await reconcileProductionState(pool, row, "research", "active", 14, "Recovered a persisted creative brief and resumed autonomous writing.");
+        run = {
+          ...run,
+          status: "waiting",
+          blockerCode: null,
+          blockerMessage: null,
+          currentAction: "Recovered a persisted creative brief and resumed autonomous writing.",
+          currentAgentName: "Input Validation Agent",
+          currentAgentRole: "validation",
+          modelName: "CACSMS Brief Recovery Engine v1",
+          nextAction: "Validate required inputs before autonomous writing begins.",
+          briefValid: true
+        };
+      } else {
+        return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
+      }
+    } else {
+      return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
+    }
+  }
+
+  if (run.status === "completed" && action === "sync") {
     return refreshProductionSnapshot(pool, settings, settings.WorkspaceId, productionId, true);
   }
 
@@ -1949,7 +2038,9 @@ export async function runScriptWritingScheduler() {
   const productions = await loadProductions(pool, settings.WorkspaceId);
 
   for (const prod of productions) {
-    if (["completed", "published", "archived", "cancelled"].includes(prod.status.toLowerCase())) continue;
+    if (["archived", "cancelled"].includes(prod.status.toLowerCase())) {
+      continue;
+    }
 
     try {
       await runScriptEditorAutomation(prod.id, "sync");

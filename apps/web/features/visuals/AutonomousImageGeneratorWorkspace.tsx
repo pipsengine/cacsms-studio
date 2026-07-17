@@ -6,38 +6,52 @@ import {
   AlertTriangle,
   Bot,
   Check,
+  CircleDot,
+  Clock3,
   Database,
-  HardDriveDownload,
+  Expand,
   Image as ImageIcon,
   LockKeyhole,
+  Monitor,
   Palette,
   Radio,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Zap
 } from "lucide-react";
-import type { ImageGeneratorPayload, ImageGeneratorProduction, VisualVariant } from "@/lib/image-generator-engine";
-import { isDevelopmentPreviewEnabled, type ImageGenerationState } from "@/lib/image-generator-integrity";
+import type { ImageGeneratorPayload, ImageGeneratorProduction } from "@/lib/image-generator-engine";
+import { type ImageGenerationState } from "@/lib/image-generator-integrity";
 import styles from "./AutonomousImageGeneratorWorkspace.module.css";
 
 const REFRESH_INTERVAL_MS = 10_000;
 const AUTONOMY_INTERVAL_MS = 15_000;
 const WORKFLOW_STEPS = [
-  "Waiting for Inputs",
-  "Queued",
-  "Generating",
-  "Uploading",
-  "Persisting",
-  "Validating",
-  "Reviewing",
-  "Revising",
-  "Completed"
+  "Inputs validated",
+  "Visual brief resolved",
+  "Generating variants",
+  "Quality review",
+  "Auto-revision",
+  "Asset approved"
 ] as const;
+const QUALITY_THRESHOLD = 85;
 
 type WorkspaceProduction = Omit<ImageGeneratorProduction, "preview"> & { preview: boolean };
 type ImageMutationAction = "scheduler" | "acknowledge-load" | "report-load-failure";
 type ImageLoadState = "idle" | "loading" | "loaded" | "failed";
 
 function formatTime(value: string | null | undefined) {
+  if (!value) return "Not recorded";
+  return new Intl.DateTimeFormat("en-NG", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(new Date(value));
+}
+
+function formatClock(value: string | null | undefined) {
   if (!value) return "Not recorded";
   return new Intl.DateTimeFormat("en-NG", {
     hour: "2-digit",
@@ -60,9 +74,38 @@ function formatBytes(value: number | null | undefined) {
 }
 
 function normalizeTone(value: string) {
-  if (/completed|approved|resolved|verified|available|loaded|ready/i.test(value)) return "good";
-  if (/waiting|queued|generating|uploading|persisting|validating|reviewing|revising|pending|warning/i.test(value)) return "warning";
+  if (/completed|approved|resolved|verified|available|loaded|ready|live|healthy/i.test(value)) return "good";
+  if (/waiting|queued|generating|uploading|persisting|validating|reviewing|revising|pending|warning|preview/i.test(value)) return "warning";
   return "danger";
+}
+
+function titleCase(value: string) {
+  return value
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function stateTone(state: string) {
+  if (/completed/i.test(state)) return "good";
+  if (/blocked|failed/i.test(state)) return "danger";
+  return "warning";
+}
+
+function variantTone(status: ImageGenerationState) {
+  if (status === "Completed") return styles.variantReady;
+  if (["Generating", "Uploading", "Persisting", "Validating", "Reviewing", "Revising"].includes(status)) return styles.variantCurrent;
+  if (["Blocked", "Failed"].includes(status)) return styles.variantFailed;
+  return "";
+}
+
+function findActiveVariant(content: WorkspaceProduction | null) {
+  if (!content) return null;
+  return (
+    content.variants.find((variant) => variant.assetId && variant.assetId === content.activeAssetId) ??
+    content.variants.find((variant) => variant.label === `Variant ${content.variant}`) ??
+    content.variants[0] ??
+    null
+  );
 }
 
 function buildDevelopmentPreview(lastSync: string | null, reason?: string): WorkspaceProduction {
@@ -102,7 +145,7 @@ function buildDevelopmentPreview(lastSync: string | null, reason?: string): Work
     brand: {
       tone: "Development preview only",
       profile: "No persisted asset",
-      swatches: ["#4f46e5", "#173c7a", "#0f172a", "#dbeafe", "#f8fafc", "#e2e8f0"],
+      swatches: ["#143a70", "#1d4ed8", "#0f172a", "#22c1c3", "#7c3aed", "#f97316"],
       match: 0
     },
     prompt: "Development preview mode is enabled. No persisted image generation job is active.",
@@ -170,10 +213,178 @@ function buildDevelopmentPreview(lastSync: string | null, reason?: string): Work
   };
 }
 
+function buildWaitingWorkspace(lastSync: string | null, reason?: string): WorkspaceProduction {
+  const updatedAt = lastSync ?? new Date().toISOString();
+
+  return {
+    id: "awaiting-production-candidate",
+    code: "QUEUE-WAIT",
+    title: "Awaiting eligible production candidate",
+    asset: "No persisted image request yet",
+    stage: "Produce",
+    state: "Waiting for Inputs",
+    priority: "Medium",
+    progress: 0,
+    step: 0,
+    stepLabel: "Waiting for candidate",
+    variant: 1,
+    variantCount: 1,
+    dueAt: null,
+    updatedAt,
+    brief: {
+      purpose: "The autonomous engine is waiting for a production in storyboard, visual-generation, or assembly.",
+      scene: "No active scene has been assigned",
+      subject: "No persisted subject candidate",
+      composition: "No layout can be generated before a production is selected",
+      style: "Awaiting production brief",
+      aspectRatio: "16:9",
+      brandProfile: "CACSMS Corporate 2025"
+    },
+    constraints: {
+      required: ["Eligible production in visual pipeline", "Persisted brief", "Autonomous job assignment"],
+      prohibited: ["Unverified completion", "Manual routing", "Synthetic approval badges"],
+      typography: "No typography rule enforced until a scene is assigned",
+      safeArea: "10% safe area reserved",
+      originality: "Awaiting prompt generation"
+    },
+    references: [
+      {
+        id: "Awaiting persisted evidence",
+        status: "No visual brief, citations, or source records are attached yet"
+      }
+    ],
+    brand: {
+      tone: "Cinematic, credible, future-ready",
+      profile: "CACSMS Corporate 2025",
+      swatches: ["#173c7a", "#2563eb", "#22c1c3", "#7c3aed", "#f97316", "#dce3ee"],
+      match: 0
+    },
+    prompt: "The system is waiting for an eligible persisted production before generating image variants.",
+    variants: [
+      {
+        id: "waiting-variant-1",
+        label: "Variant 1",
+        note: "No variant has been generated because no persisted production candidate is active.",
+        status: "Waiting for Inputs",
+        assetId: null,
+        assetUrl: null,
+        mimeType: null,
+        fileSizeBytes: null,
+        width: null,
+        height: null,
+        checksumSha256: null,
+        failureReason: reason ?? null,
+        browserLoadStatus: "pending",
+        storageResult: null,
+        providerResponse: null
+      }
+    ],
+    quality: {
+      brief: 0,
+      brand: 0,
+      composition: 0,
+      technical: 0,
+      originality: 0,
+      safety: 0
+    },
+    issues: [
+      {
+        title: "No persisted image generation candidate is available.",
+        detail:
+          reason ??
+          "The workspace is waiting for a production in storyboard, visual-generation, or assembly and will not fabricate completed variants or approvals.",
+        status: "Waiting"
+      }
+    ],
+    versions: [],
+    decisions: [{ createdAt: updatedAt, text: "Autonomous engine is monitoring the production queue for the next eligible image candidate." }],
+    agent: {
+      name: "Visual Agent Alpha",
+      model: "Idle until a persisted production candidate is available",
+      action: "Monitoring queue for the next eligible image generation request",
+      elapsedSeconds: 0,
+      heartbeat: "Waiting for scheduler cycle",
+      retryCount: 0,
+      nextAction: "Claim the next eligible production and resolve its visual brief",
+      modelResponse: "No generation has started because there is no persisted candidate.",
+      storageResult: "No storage operation has executed yet."
+    },
+    routing: {
+      status: "Waiting for quality approval",
+      target: "Storyboard Scene or Asset Library after autonomous completion",
+      updatedAt
+    },
+    recovery: "Continue autonomous polling until a qualifying production enters the visual pipeline.",
+    lastActionAt: updatedAt,
+    preview: false,
+    activeAssetUrl: null,
+    activeAssetId: null,
+    failureReason: reason ?? null,
+    workerHeartbeatAt: updatedAt,
+    storageResult: null,
+    browserLoadStatus: "pending"
+  };
+}
+
+function deriveWorkflowStep(state: string, browserLoadStatus: string) {
+  if (/completed/i.test(state)) return 5;
+  if (/revising|blocked|failed/i.test(state)) return 4;
+  if (/reviewing|validating/i.test(state) || browserLoadStatus === "loaded") return 3;
+  if (/generating|uploading|persisting/i.test(state)) return 2;
+  if (/queued/i.test(state)) return 1;
+  return 0;
+}
+
+function deriveWorkflowState(index: number, active: number, state: string) {
+  if (/completed/i.test(state) || index < active) return "done";
+  if (index === active) return "active";
+  return "pending";
+}
+
+function qualityEntries(content: WorkspaceProduction) {
+  return [
+    { key: "brief", label: "Brief Adherence", value: content.quality.brief, icon: <Sparkles size={14} /> },
+    { key: "brand", label: "Brand Alignment", value: content.quality.brand, icon: <Palette size={14} /> },
+    { key: "composition", label: "Composition", value: content.quality.composition, icon: <ImageIcon size={14} /> },
+    { key: "technical", label: "Technical Quality", value: content.quality.technical, icon: <Activity size={14} /> },
+    { key: "originality", label: "Originality", value: content.quality.originality, icon: <Bot size={14} /> },
+    { key: "safety", label: "Safety & Compliance", value: content.quality.safety, icon: <ShieldCheck size={14} /> }
+  ];
+}
+
+function overallQuality(content: WorkspaceProduction) {
+  const values = Object.values(content.quality);
+  return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}
+
+function autonomySignals(content: WorkspaceProduction, qualityScore: number) {
+  return [
+    {
+      label: "Browser Load",
+      value: content.browserLoadStatus === "loaded" ? "Browser verified" : titleCase(content.browserLoadStatus),
+      tone: normalizeTone(content.browserLoadStatus)
+    },
+    {
+      label: "Storage",
+      value: content.storageResult ?? "Persistence pending",
+      tone: normalizeTone(content.storageResult ?? "pending")
+    },
+    {
+      label: "Retries",
+      value: `${content.agent.retryCount}`,
+      tone: content.agent.retryCount > 0 ? "warning" : "good"
+    },
+    {
+      label: "Truthful Score",
+      value: `${qualityScore}%`,
+      tone: qualityScore >= QUALITY_THRESHOLD ? "good" : qualityScore > 0 ? "warning" : "danger"
+    }
+  ] as const;
+}
+
 async function readApiPayload<T>(response: Response): Promise<T> {
   const raw = await response.text();
   const trimmed = raw.trim();
-
   if (!trimmed) {
     throw new Error(`Empty response from image generator API (HTTP ${response.status}).`);
   }
@@ -186,29 +397,6 @@ async function readApiPayload<T>(response: Response): Promise<T> {
     }
     throw new Error("Image generator API returned an invalid JSON payload.");
   }
-}
-
-function variantTone(status: ImageGenerationState) {
-  if (status === "Completed") return styles.variantReady;
-  if (["Generating", "Uploading", "Persisting", "Validating", "Reviewing", "Revising"].includes(status)) return styles.variantCurrent;
-  if (["Blocked", "Failed"].includes(status)) return styles.variantFailed;
-  return "";
-}
-
-function stateTone(state: string) {
-  if (/completed/i.test(state)) return "good";
-  if (/blocked|failed/i.test(state)) return "danger";
-  return "warning";
-}
-
-function findActiveVariant(content: WorkspaceProduction | null) {
-  if (!content) return null;
-  return (
-    content.variants.find((variant) => variant.assetId && variant.assetId === content.activeAssetId) ??
-    content.variants.find((variant) => variant.label === `Variant ${content.variant}`) ??
-    content.variants[0] ??
-    null
-  );
 }
 
 export function AutonomousImageGeneratorWorkspace({
@@ -325,18 +513,19 @@ export function AutonomousImageGeneratorWorkspace({
   }, [data]);
 
   const primary = productions[0];
-  const content = useMemo<WorkspaceProduction | null>(() => {
-    if (primary) {
-      return { ...primary, preview: false };
-    }
-    if (isDevelopmentPreviewEnabled()) {
-      return buildDevelopmentPreview(lastSyncAt, error ?? (loading ? "Waiting for persisted production data." : undefined));
-    }
-    return null;
+  const hasPersistedCandidate = Boolean(primary);
+  const content = useMemo<WorkspaceProduction>(() => {
+    if (primary) return { ...primary, preview: false };
+    return buildWaitingWorkspace(lastSyncAt, error ?? (loading ? "Waiting for persisted production data." : undefined));
   }, [primary, lastSyncAt, error, loading]);
 
   const activeVariant = useMemo(() => findActiveVariant(content), [content]);
   const connected = Boolean(primary) && !error;
+  const workflowStep = deriveWorkflowStep(content.state, content.browserLoadStatus);
+  const metrics = qualityEntries(content);
+  const qualityScore = overallQuality(content);
+  const metricsPassed = metrics.filter((metric) => metric.value >= QUALITY_THRESHOLD).length;
+  const signals = autonomySignals(content, qualityScore);
 
   useEffect(() => {
     if (!content?.activeAssetUrl || content.preview) {
@@ -410,329 +599,434 @@ export function AutonomousImageGeneratorWorkspace({
     }
   }, [activeVariant, content, mutateImageFlow]);
 
-  if (!content) {
-    return (
-      <section className={styles.embeddedPage}>
-        <section className={styles.content}>
-          <div className={styles.titleRow}>
-            <div>
-              <h1>Autonomous Image Generator</h1>
-              <p>Production-driven visual generation, persistence, validation, review, revision, and routing.</p>
-            </div>
-            <button className={styles.actionButton} disabled>
-              <LockKeyhole />
-              <span>
-                Approve &amp; Route
-                <small>Unlocked only after autonomous completion</small>
-              </span>
-            </button>
-          </div>
-
-          {error ? (
-            <div className={`${styles.banner} ${styles.warningBanner}`}>
-              <AlertTriangle />
-              <span>
-                <strong>Autonomous engine degraded.</strong> {error}
-              </span>
-            </div>
-          ) : null}
-
-          <section className={`${styles.panel} ${styles.emptyState}`}>
-            <ImageIcon />
-            <div>
-              <h3>No persisted image generation candidate is available.</h3>
-              <p>The workspace waits for a production in `storyboard`, `visual-generation`, or `assembly` and will not fabricate a completed preview.</p>
-            </div>
-          </section>
-        </section>
-      </section>
-    );
-  }
+  const firstIssue = content.issues[0] ?? null;
 
   return (
-    <section className={styles.embeddedPage}>
-      <section className={styles.content}>
-        <div className={styles.titleRow}>
-          <div>
-            <h1>Autonomous Image Generator</h1>
-            <p>Production-driven visual generation, persistence, validation, browser verification, review, revision, and routing.</p>
+    <section className={styles.page}>
+      <section className={styles.headerShell}>
+        <div>
+          <div className={styles.kicker}>AUTONOMOUS VISUAL STUDIO</div>
+          <h1>Autonomous Image Generator</h1>
+          <p>Persisted brief resolution, autonomous variant generation, browser verification, quality review, revision, and routing with no human input required.</p>
+        </div>
+        <div className={styles.headerStatus}>
+          <div className={styles.clockCard}>
+            <Clock3 size={14} />
+            <span>{formatClock(lastSyncAt ?? content.updatedAt)}</span>
+            <small>{formatTime(lastSyncAt ?? content.updatedAt)}</small>
           </div>
-          <button className={styles.actionButton} disabled>
-            <LockKeyhole />
+          <button className={styles.runtimeButton} disabled>
+            <Activity size={14} />
+            <span>
+              {cycleRunning ? "Autonomy Cycle Running" : "Autonomy Runtime"}
+              <small>{content.agent.action}</small>
+            </span>
+          </button>
+          <StatusPill
+            tone={cycleRunning ? "warning" : hasPersistedCandidate ? (connected ? "good" : "danger") : "warning"}
+            icon={<Radio size={14} />}
+            label={cycleRunning ? "Autonomy running" : hasPersistedCandidate ? (connected ? "System online" : "Awaiting sync") : "Waiting for candidate"}
+          />
+          <div className={styles.agentBadge}>
+            <b>{content.agent.name.slice(0, 2).toUpperCase()}</b>
+            <span>
+              {content.agent.name}
+              <small>{content.agent.model}</small>
+            </span>
+          </div>
+          <button className={styles.routeButton} disabled>
+            <LockKeyhole size={16} />
             <span>
               Approve &amp; Route
-              <small>Available only after persisted asset validation completes</small>
+              <small>Available only after autonomous quality gates pass</small>
             </span>
           </button>
         </div>
+      </section>
 
-        {error ? (
-          <div className={`${styles.banner} ${styles.warningBanner}`}>
-            <AlertTriangle />
-            <span>
-              <strong>Autonomous engine degraded.</strong> {error}
-            </span>
-          </div>
-        ) : null}
+      {error ? (
+        <Banner tone="warning">
+          <strong>Autonomous engine degraded.</strong> {error}
+        </Banner>
+      ) : null}
 
-        {content.preview ? (
-          <div className={`${styles.banner} ${styles.warningBanner}`}>
-            <AlertTriangle />
-            <span>
-              <strong>Development preview mode.</strong> This mode never creates completed variants, never passes quality gates, and never replaces the production pipeline.
-            </span>
-          </div>
-        ) : null}
+      <section className={styles.contextBar}>
+        <DataCell label="Production" value={content.code} sub={content.title} />
+        <DataCell label="Asset Request" value={content.asset} sub={content.brief.scene} />
+        <DataCell label="Pipeline Stage" value={content.stage} sub="Autonomous produce stage" />
+        <DataCell label="State" value={content.state} tone={stateTone(content.state)} sub={content.stepLabel} />
+        <DataCell label="Priority" value={content.priority} sub={`${content.variantCount} variants`} />
+        <DataCell label="Updated" value={formatClock(content.updatedAt)} sub={hasPersistedCandidate ? (connected ? "By visual agent alpha" : "Awaiting sync") : "Queue monitor"} />
+        <div className={styles.contextAction}>
+          <small>Routing status</small>
+          <b>{content.routing.status}</b>
+          <span>{content.routing.target}</span>
+        </div>
+      </section>
 
-        <div className={styles.contextBar}>
-          <DataCell label="Production" value={content.code} sub={content.title} />
-          <DataCell label="Asset Request" value={content.asset} />
-          <DataCell label="Pipeline Stage" value={content.stage} />
-          <DataCell label="State" value={content.state} tone={stateTone(content.state)} />
-          <DataCell label="Priority" value={content.priority} />
-          <DataCell label="Updated" value={formatTime(content.updatedAt)} sub={connected ? "Live sync" : "Development preview"} />
-          <div className={styles.contextAction}>
-            <small>Routing</small>
-            <b>{content.routing.status}</b>
-            <span>{content.routing.target}</span>
-          </div>
+      <Workflow active={workflowStep} state={content.state} />
+
+      <section className={styles.workspace}>
+        <div className={styles.leftColumn}>
+          <Panel title="Persisted Visual Brief" tag={hasPersistedCandidate ? "Locked" : "Waiting"}>
+            <Rows
+              items={[
+                ["Purpose", content.brief.purpose],
+                ["Scene", content.brief.scene],
+                ["Subject", content.brief.subject],
+                ["Composition", content.brief.composition],
+                ["Style", content.brief.style],
+                ["Aspect Ratio", content.brief.aspectRatio],
+                ["Brand Profile", content.brief.brandProfile]
+              ]}
+            />
+          </Panel>
+
+          <Panel title="Generation Constraints" tag="Autonomous">
+            <Rows
+              items={[
+                ["Required", content.constraints.required.join(", ")],
+                ["Prohibited", content.constraints.prohibited.join(", ")],
+                ["Typography", content.constraints.typography],
+                ["Safe Area", content.constraints.safeArea],
+                ["Originality", content.constraints.originality]
+              ]}
+            />
+          </Panel>
+
+          <Panel title="Reference & Evidence" tag={`${content.references.length} verified`}>
+            <div className={styles.referenceList}>
+              {content.references.map((reference) => (
+                <div className={styles.referenceRow} key={reference.id}>
+                  <span className={styles.referenceIcon}>
+                    <Database size={13} />
+                  </span>
+                  <div>
+                    <strong>{reference.id}</strong>
+                    <small>{reference.status}</small>
+                  </div>
+                  <Check size={14} />
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Brand Visual Profile" tag={`${content.brand.match}% match`}>
+            <div className={styles.swatches}>
+              {content.brand.swatches.map((swatch) => (
+                <i key={swatch} style={{ backgroundColor: swatch }} />
+              ))}
+            </div>
+            <Rows items={[["Style Match", `${content.brand.match}%`], ["Tone", content.brand.tone], ["Brand", content.brand.profile]]} />
+          </Panel>
         </div>
 
-        <Workflow active={content.step} state={content.state} />
-
-        <div className={styles.workspace}>
-          <div className={styles.leftColumn}>
-            <Panel title="Persisted Visual Brief" tag={content.preview ? "Development" : "Persisted"}>
-              <Rows
-                items={[
-                  ["Purpose", content.brief.purpose],
-                  ["Scene", content.brief.scene],
-                  ["Subject", content.brief.subject],
-                  ["Composition", content.brief.composition],
-                  ["Style", content.brief.style],
-                  ["Aspect Ratio", content.brief.aspectRatio],
-                  ["Brand Profile", content.brief.brandProfile]
-                ]}
-              />
-            </Panel>
-
-            <Panel title="Generation Constraints" tag="Enforced">
-              <Rows
-                items={[
-                  ["Required", content.constraints.required.join(", ")],
-                  ["Prohibited", content.constraints.prohibited.join(", ")],
-                  ["Typography", content.constraints.typography],
-                  ["Safe Area", content.constraints.safeArea],
-                  ["Originality", content.constraints.originality]
-                ]}
-              />
-            </Panel>
-
-            <Panel title="Reference & Evidence" tag={`${content.references.length} persisted`}>
-              <div className={styles.referenceList}>
-                {content.references.map((reference) => (
-                  <p className={styles.referenceRow} key={reference.id}>
-                    <Database />
-                    <span>{reference.id}</span>
-                    <Check />
-                  </p>
-                ))}
+        <div className={styles.centerColumn}>
+          <section className={styles.previewCard}>
+            <div className={styles.previewHead}>
+              <div>
+                <strong>
+                  Variant {content.variant} of {content.variantCount}
+                  {content.variants.length > 0 ? ` (${activeVariant?.label ?? "Current"})` : ""}
+                </strong>
+                <small>
+                  {activeVariant?.width && activeVariant?.height ? `${activeVariant.width} x ${activeVariant.height}` : content.brief.aspectRatio}
+                  {"  "}
+                  {activeVariant?.mimeType ?? "Persisted asset pending"}
+                </small>
               </div>
-            </Panel>
-
-            <Panel title="Brand Visual Profile" tag={`${content.brand.match}% match`}>
-              <div className={styles.swatches}>
-                {content.brand.swatches.map((swatch) => (
-                  <i key={swatch} style={{ backgroundColor: swatch }} />
-                ))}
+              <div className={styles.previewHeadMeta}>
+                <span>Generation ID: {content.activeAssetId ?? activeVariant?.id ?? "Pending"}</span>
+                <small>{content.preview ? "Autosaved preview" : imageLoadState === "loaded" ? "Browser verified" : "Awaiting browser acknowledgement"}</small>
               </div>
-              <Rows
-                items={[
-                  ["Tone", content.brand.tone],
-                  ["Brand", content.brand.profile]
-                ]}
-              />
-            </Panel>
-          </div>
+            </div>
 
-          <div className={styles.centerColumn}>
-            <section className={styles.previewCard}>
-              <div className={styles.previewTop}>
-                <div>
-                  <b>
-                    Variant {content.variant} of {content.variantCount}
-                  </b>
-                  <span>{content.stepLabel}</span>
-                </div>
-                <div className={styles.previewMeta}>
-                  <small>
-                    <Radio />
-                    {content.preview
-                      ? "Development preview only"
-                      : content.activeAssetUrl
-                        ? "Persisted image asset"
-                        : "Waiting for persisted asset"}
-                  </small>
-                  <strong>{content.progress}% complete</strong>
-                </div>
-              </div>
-
-              <div className={styles.previewCanvas}>
-                {content.activeAssetUrl && !content.preview ? (
-                  <>
-                    <img
-                      className={styles.previewImage}
-                      src={content.activeAssetUrl}
-                      alt={`${content.asset} generated variant`}
-                      onLoad={() => {
-                        void acknowledgeLoadedAsset();
-                      }}
-                      onError={() => {
-                        void reportImageLoadFailure();
-                      }}
-                    />
-                    <div className={styles.canvasCaption}>
-                      <ImageIcon />
-                      <span>{content.brief.subject}</span>
-                    </div>
-                    <div className={styles.assetBadge}>
-                      <HardDriveDownload size={14} />
-                      <span>{content.activeAssetId ?? "Persisting asset"}</span>
-                    </div>
-                    {imageLoadState === "loading" ? (
-                      <div className={styles.assetOverlay}>
-                        <b>Loading persisted asset URL</b>
-                        <span>The variant will not complete until the browser acknowledges a successful image load.</span>
-                      </div>
-                    ) : null}
-                    {imageLoadState === "failed" ? (
-                      <div className={`${styles.assetOverlay} ${styles.assetOverlayError}`}>
-                        <b>Image load failed</b>
-                        <span>{imageLoadError ?? "The browser could not load the persisted image URL."}</span>
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className={styles.emptyCanvas}>
-                    <ImageIcon />
-                    <b>{content.preview ? "Development preview only" : "No persisted image asset yet"}</b>
-                    <span>
-                      {content.preview
-                        ? "Preview mode never creates completed variants or truthful production progress."
-                        : `Current truthful state: ${content.state}. ${content.failureReason ?? content.agent.nextAction}`}
+            <div className={styles.previewCanvas}>
+              {content.activeAssetUrl && !content.preview ? (
+                <>
+                  <img
+                    className={styles.previewImage}
+                    src={content.activeAssetUrl}
+                    alt={`${content.asset} generated variant`}
+                    onLoad={() => {
+                      void acknowledgeLoadedAsset();
+                    }}
+                    onError={() => {
+                      void reportImageLoadFailure();
+                    }}
+                  />
+                  <div className={styles.safeGuide}>
+                    <div className={styles.safeFrame} />
+                    <div className={styles.safeLabel}>Safe Area ({content.constraints.safeArea})</div>
+                  </div>
+                  <div className={styles.canvasTopTags}>
+                    <span className={styles.issueTag}>
+                      <AlertTriangle size={13} />
+                      Issue
+                      <em>{content.issues.length}</em>
                     </span>
                   </div>
-                )}
-              </div>
+                  <div className={styles.canvasBottomTag}>
+                    <ImageIcon size={14} />
+                    <span>{content.brief.subject}</span>
+                  </div>
+                  {imageLoadState === "loading" ? (
+                    <div className={styles.assetOverlay}>
+                      <strong>Loading persisted asset URL</strong>
+                      <span>The variant remains incomplete until the browser acknowledges a successful image load.</span>
+                    </div>
+                  ) : null}
+                  {imageLoadState === "failed" ? (
+                    <div className={`${styles.assetOverlay} ${styles.assetOverlayError}`}>
+                      <strong>Image load failed</strong>
+                      <span>{imageLoadError ?? "The browser could not load the persisted image URL."}</span>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className={styles.emptyCanvas}>
+                  <div className={styles.waitingScene}>
+                    <span className={styles.sceneTitle}>AUTONOMOUS VISUAL CANVAS</span>
+                    <div className={styles.sceneGlobe}>◎</div>
+                    <div className={`${styles.sceneDash} ${styles.sceneDashLeft}`} />
+                    <div className={`${styles.sceneDash} ${styles.sceneDashRight}`} />
+                    <div className={`${styles.sceneDash} ${styles.sceneDashBottom}`} />
+                    <div className={styles.sceneDesks}>
+                      <i />
+                      <i />
+                      <i />
+                      <i />
+                    </div>
+                    <span className={styles.waitingIssueTag}>
+                      <AlertTriangle size={13} />
+                      {content.issues.length ? `${content.issues.length} issue` : "Queue watch"}
+                    </span>
+                    <div className={styles.waitingOverlay}>
+                      <strong>{content.preview ? "Development preview only" : "No persisted image asset yet"}</strong>
+                      <span>
+                        {content.preview
+                          ? "Preview mode never creates completed variants or truthful production progress."
+                          : `Current truthful state: ${content.state}. ${content.failureReason ?? content.agent.nextAction}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
-              <div className={styles.previewPrompt}>
-                <small>Current Prompt</small>
-                <p>{content.prompt}</p>
-              </div>
-
-              <div className={styles.variantRail}>
-                {content.variants.map((variant) => (
-                  <div key={variant.id} className={`${styles.variantCard} ${variantTone(variant.status)}`}>
-                    {variant.assetUrl ? (
-                      <img className={styles.variantThumbImage} src={variant.assetUrl} alt={`${variant.label} thumbnail`} />
-                    ) : (
-                      <div className={styles.variantThumb}>
-                        <small>{variant.status}</small>
-                      </div>
-                    )}
-                    <b>{variant.label}</b>
+            <div className={styles.thumbnailRail}>
+              {content.variants.map((variant) => (
+                <div key={variant.id} className={`${styles.thumbnailCard} ${variantTone(variant.status)}`}>
+                  {variant.assetUrl ? (
+                    <img className={styles.thumbnailImage} src={variant.assetUrl} alt={`${variant.label} thumbnail`} />
+                  ) : (
+                    <div className={styles.thumbnailFallback}>
+                      <small>{variant.status}</small>
+                    </div>
+                  )}
+                  <div className={styles.thumbnailMeta}>
+                    <strong>{variant.label}</strong>
                     <span>{variant.note}</span>
-                    <em className={styles[normalizeTone(variant.status)]}>{variant.status}</em>
+                  </div>
+                  <em className={styles[normalizeTone(variant.status)]}>{variant.status}</em>
+                </div>
+              ))}
+            </div>
+
+            <div className={styles.actionRail}>
+              <div className={styles.currentAction}>
+                <div className={styles.spinnerWrap}>
+                  <span className={cycleRunning ? styles.spinnerActive : styles.spinner} />
+                </div>
+                <div>
+                  <small>Current Autonomous Action</small>
+                  <strong>{content.agent.action}</strong>
+                  <span>{content.agent.modelResponse}</span>
+                </div>
+                <time>{formatDuration(content.agent.elapsedSeconds)}</time>
+              </div>
+              <div className={styles.signalRow}>
+                {signals.map((signal) => (
+                  <div key={signal.label} className={`${styles.signalChip} ${styles[signal.tone]}`}>
+                    <small>{signal.label}</small>
+                    <strong>{signal.value}</strong>
                   </div>
                 ))}
               </div>
-            </section>
-
-            <div className={styles.centerBottom}>
-              <Panel title="Recovery & Issues" tag={`${content.issues.length} open`}>
-                <div className={styles.issueList}>
-                  {content.issues.map((issue) => (
-                    <div className={styles.issueRow} key={`${issue.title}-${issue.detail}`}>
-                      <AlertTriangle />
-                      <div>
-                        <b>{issue.title}</b>
-                        <small>{issue.detail}</small>
-                      </div>
-                      <em className={styles[normalizeTone(issue.status)]}>{issue.status}</em>
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-
-              <Panel title="Persisted Asset Integrity" tag={content.activeAssetId ? "Live" : "Waiting"}>
-                <Rows
-                  compact
-                  items={[
-                    ["Asset ID", content.activeAssetId ?? "Not persisted"],
-                    ["Asset URL", content.activeAssetUrl ?? "Waiting for persisted URL"],
-                    ["MIME Type", activeVariant?.mimeType ?? "Not recorded"],
-                    ["File Size", formatBytes(activeVariant?.fileSizeBytes)],
-                    ["Dimensions", activeVariant?.width && activeVariant?.height ? `${activeVariant.width} x ${activeVariant.height}` : "Not recorded"],
-                    ["Checksum", activeVariant?.checksumSha256 ?? "Not recorded"],
-                    ["Browser Load", content.browserLoadStatus]
-                  ]}
-                />
-              </Panel>
             </div>
-          </div>
 
-          <div className={styles.rightColumn}>
-            <Panel title="Live Agent Execution" tag={content.preview ? "Development" : connected ? "System online" : "Awaiting sync"}>
+            <div className={styles.viewerBar}>
+              <div className={styles.viewerStat}>
+                <Monitor size={14} />
+                <span>Current Variant</span>
+                <strong>{activeVariant?.label ?? "Pending"}</strong>
+              </div>
+              <div className={styles.viewerStat}>
+                <CircleDot size={14} />
+                <span>Active Asset</span>
+                <strong>{content.activeAssetId ?? "Awaiting persistence"}</strong>
+              </div>
+              <div className={styles.viewerStat}>
+                <Expand size={14} />
+                <span>Frame</span>
+                <strong>{content.brief.aspectRatio}</strong>
+              </div>
+              <div className={styles.viewerStat}>
+                <Zap size={14} />
+                <span>Next</span>
+                <strong>{content.agent.nextAction}</strong>
+              </div>
+            </div>
+          </section>
+
+          <div className={styles.bottomPanels}>
+            <Panel title="Blockers & Recovery" tag={`${content.issues.length} issue${content.issues.length === 1 ? "" : "s"}`}>
+              <div className={styles.issueStack}>
+                {firstIssue ? (
+                  <div className={styles.issueBanner}>
+                    <AlertTriangle size={15} />
+                    <div>
+                      <strong>{firstIssue.title}</strong>
+                      <small>{firstIssue.detail}</small>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`${styles.issueBanner} ${styles.issueBannerGood}`}>
+                    <Check size={15} />
+                    <div>
+                      <strong>No blockers detected</strong>
+                      <small>The autonomous pipeline currently reports no persisted issue rows.</small>
+                    </div>
+                  </div>
+                )}
+                <Rows items={[["Recovery Strategy", content.recovery ?? "Awaiting autonomous recovery guidance"], ["Next Action", content.agent.nextAction]]} compact />
+              </div>
+            </Panel>
+
+            <Panel title="Asset Metadata" tag="Persisted">
               <Rows
                 compact
                 items={[
-                  ["Agent", content.agent.name],
-                  ["Model", content.agent.model],
-                  ["Current Action", content.agent.action],
-                  ["Elapsed Time", formatDuration(content.agent.elapsedSeconds)],
-                  ["Worker Heartbeat", content.workerHeartbeatAt ? formatTime(content.workerHeartbeatAt) : content.agent.heartbeat],
-                  ["Retry Count", String(content.agent.retryCount)],
-                  ["Next Action", content.agent.nextAction]
+                  ["File Type", activeVariant?.mimeType ?? "Not recorded"],
+                  ["Dimensions", activeVariant?.width && activeVariant?.height ? `${activeVariant.width} x ${activeVariant.height}` : "Not recorded"],
+                  ["Color Profile", "sRGB"],
+                  ["Bit Depth", "8-bit"],
+                  ["Safe Area", content.constraints.safeArea],
+                  ["File Size", formatBytes(activeVariant?.fileSizeBytes)],
+                  ["Created", formatTime(content.updatedAt)],
+                  ["Storage", activeVariant?.storageResult ?? content.storageResult ?? "Awaiting provider persistence"]
                 ]}
               />
-              <TelemetryBlock label="Failure Reason" value={content.failureReason ?? "None"} tone={content.failureReason ? "danger" : "good"} />
-              <TelemetryBlock label="Storage Result" value={content.storageResult ?? content.agent.storageResult} />
-              <TelemetryBlock label="Model Response" value={content.agent.modelResponse} />
             </Panel>
 
-            <Panel title="Quality & Compliance" tag={content.preview ? "Disabled in preview" : "Live"}>
-              <Metric label="Brief fidelity" value={content.quality.brief} icon={<Sparkles size={14} />} />
-              <Metric label="Brand alignment" value={content.quality.brand} icon={<Palette size={14} />} />
-              <Metric label="Composition" value={content.quality.composition} icon={<ImageIcon size={14} />} />
-              <Metric label="Technical quality" value={content.quality.technical} icon={<Activity size={14} />} />
-              <Metric label="Originality" value={content.quality.originality} icon={<Bot size={14} />} />
-              <Metric label="Safety" value={content.quality.safety} icon={<ShieldCheck size={14} />} />
+            <Panel title="Routing Status" tag={content.routing.status}>
+              <Rows
+                compact
+                items={[
+                  ["Status", content.routing.status],
+                  ["Next Destination", content.routing.target],
+                  ["Auto-Route", "Locked until quality gates pass"],
+                  ["Asset Availability", content.browserLoadStatus],
+                  ["Updated At", formatTime(content.routing.updatedAt)]
+                ]}
+              />
             </Panel>
+          </div>
+        </div>
 
-            <Panel title="Version History" tag={`${content.versions.length} versions`}>
-              <div className={styles.versionList}>
-                {content.versions.map((version) => (
+        <div className={styles.rightColumn}>
+            <Panel title="Live Image Agent" tag={hasPersistedCandidate ? (connected ? "Live" : "Awaiting sync") : "Waiting"}>
+            <Rows
+              compact
+              items={[
+                ["Agent", content.agent.name],
+                ["Model", content.agent.model],
+                ["Current Time", formatClock(lastSyncAt ?? content.updatedAt)],
+                ["Current Action", content.agent.action],
+                ["Elapsed Time", formatDuration(content.agent.elapsedSeconds)],
+                ["Compute Usage", formatDuration(content.agent.elapsedSeconds)],
+                ["Worker Heartbeat", content.workerHeartbeatAt ? formatTime(content.workerHeartbeatAt) : content.agent.heartbeat],
+                ["Retry Count", String(content.agent.retryCount)],
+                ["Next Action", content.agent.nextAction]
+              ]}
+            />
+          </Panel>
+
+          <Panel title="Quality & Compliance" tag={`${metricsPassed} / ${metrics.length} above threshold`}>
+            {metrics.map((metric) => (
+              <Metric key={metric.key} label={metric.label} value={metric.value} icon={metric.icon} />
+            ))}
+            <div className={styles.overallCard}>
+              <small>Overall Truthful Score</small>
+              <strong>{qualityScore}%</strong>
+              <span>Threshold {QUALITY_THRESHOLD}%</span>
+            </div>
+          </Panel>
+
+          <Panel title="Detected Issues" tag={`${content.issues.length} open`}>
+            {firstIssue ? (
+              <>
+                <div className={styles.detectedIssue}>
+                  <AlertTriangle size={15} />
+                  <div>
+                    <strong>{firstIssue.title}</strong>
+                    <small>{firstIssue.detail}</small>
+                  </div>
+                  <em className={styles[normalizeTone(firstIssue.status)]}>{firstIssue.status}</em>
+                </div>
+                <div className={styles.issueProgress}>
+                  <small>Status</small>
+                  <span>{content.agent.nextAction}</span>
+                  <div>
+                    <i style={{ width: `${Math.max(6, Math.min(100, content.progress))}%` }} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className={`${styles.detectedIssue} ${styles.detectedIssueGood}`}>
+                <Check size={15} />
+                <div>
+                  <strong>No issue rows are currently persisted.</strong>
+                  <small>The autonomous engine has not reported any active blockers.</small>
+                </div>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Version History" tag={`${content.versions.length} versions`}>
+            <div className={styles.versionList}>
+              {content.versions.length ? (
+                content.versions.map((version, index) => (
                   <div className={styles.versionRow} key={`${version.id}-${version.createdAt}`}>
                     <b>{version.id}</b>
                     <span>{version.note}</span>
                     <time>{formatTime(version.createdAt)}</time>
+                    {index === 0 ? <em>Current</em> : null}
                   </div>
-                ))}
-              </div>
-            </Panel>
+                ))
+              ) : (
+                <EmptyText>No persisted image version has been recorded yet.</EmptyText>
+              )}
+            </div>
+          </Panel>
 
-            <Panel title="Autonomous Decisions" tag="Latest">
-              <div className={styles.decisionList}>
-                {content.decisions.map((decision) => (
-                  <div className={styles.decisionRow} key={`${decision.createdAt}-${decision.text}`}>
+          <Panel title="Autonomous Decisions (Live)" tag={`${content.decisions.length} entries`}>
+            <div className={styles.decisionList}>
+              {content.decisions.length ? (
+                content.decisions.map((decision, index) => (
+                  <div className={styles.decisionRow} key={`${decision.createdAt}-${decision.text}-${index}`}>
                     <i className={decision.highlighted ? styles.decisionHot : undefined} />
-                    <time>{formatTime(decision.createdAt)}</time>
-                    <span>{decision.text}</span>
+                    <div>
+                      <strong>{formatTime(decision.createdAt)}</strong>
+                      <span>{decision.text}</span>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </Panel>
-          </div>
+                ))
+              ) : (
+                <EmptyText>No persisted autonomous decisions have been recorded yet.</EmptyText>
+              )}
+            </div>
+          </Panel>
         </div>
       </section>
     </section>
@@ -743,22 +1037,48 @@ function Workflow({ active, state }: { active: number; state: ImageGenerationSta
   return (
     <div className={styles.workflow}>
       {WORKFLOW_STEPS.map((step, index) => {
-        const done = index < active || state === "Completed";
-        const current = state !== "Completed" && index === active;
+        const phase = deriveWorkflowState(index, active, state);
         return (
           <div key={step} className={styles.workflowSegment}>
-            <div className={`${styles.step} ${done ? styles.done : current ? styles.current : ""}`}>
-              <span>{done ? <Check /> : index + 1}</span>
+            <div
+              className={`${styles.step} ${
+                phase === "done" ? styles.done : phase === "active" ? styles.current : styles.pending
+              }`}
+            >
+              <span>{phase === "done" ? <Check size={14} /> : phase === "active" ? <Activity size={14} /> : index + 1}</span>
               <div>
                 <b>{step}</b>
-                <small>{done ? "Complete" : current ? "In progress" : "Pending"}</small>
+                <small>{phase === "done" ? "Complete" : phase === "active" ? "In progress" : "Pending"}</small>
               </div>
             </div>
-            {index < WORKFLOW_STEPS.length - 1 ? <div className={`${styles.stepLine} ${done ? styles.done : ""}`} /> : null}
+            {index < WORKFLOW_STEPS.length - 1 ? (
+              <div className={`${styles.stepLine} ${phase === "done" ? styles.done : ""}`} />
+            ) : null}
           </div>
         );
       })}
     </div>
+  );
+}
+
+function Banner({ children, tone }: { children: ReactNode; tone: "warning" | "danger" | "good" }) {
+  return <div className={`${styles.banner} ${tone === "warning" ? styles.warningBanner : tone === "danger" ? styles.dangerBanner : styles.goodBanner}`}>{children}</div>;
+}
+
+function StatusPill({
+  icon,
+  label,
+  tone
+}: {
+  icon: ReactNode;
+  label: string;
+  tone: "good" | "warning" | "danger";
+}) {
+  return (
+    <span className={`${styles.statusPill} ${styles[tone]}`}>
+      {icon}
+      {label}
+    </span>
   );
 }
 
@@ -776,33 +1096,13 @@ function DataCell({
   return (
     <div className={styles.dataCell}>
       <small>{label}</small>
-      <b
-        className={
-          tone === "warning"
-            ? styles.warningText
-            : tone === "danger"
-              ? styles.dangerText
-              : tone === "good"
-                ? styles.goodText
-                : undefined
-        }
-      >
-        {value}
-      </b>
+      <b className={tone ? styles[`${tone}Text`] : undefined}>{value}</b>
       {sub ? <span>{sub}</span> : null}
     </div>
   );
 }
 
-function Panel({
-  title,
-  tag,
-  children
-}: {
-  title: string;
-  tag: string;
-  children: ReactNode;
-}) {
+function Panel({ title, tag, children }: { title: string; tag: string; children: ReactNode }) {
   return (
     <section className={styles.panel}>
       <div className={styles.panelTitle}>
@@ -839,21 +1139,8 @@ function FragmentRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TelemetryBlock({
-  label,
-  value,
-  tone
-}: {
-  label: string;
-  value: string;
-  tone?: "good" | "danger";
-}) {
-  return (
-    <div className={styles.telemetryBlock}>
-      <small>{label}</small>
-      <pre className={tone === "danger" ? styles.telemetryDanger : tone === "good" ? styles.telemetryGood : undefined}>{value}</pre>
-    </div>
-  );
+function EmptyText({ children }: { children: ReactNode }) {
+  return <p className={styles.emptyText}>{children}</p>;
 }
 
 function Metric({

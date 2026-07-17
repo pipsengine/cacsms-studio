@@ -59,6 +59,14 @@ import { ScriptEditorWorkspace } from "@/features/writing/ScriptEditorWorkspace"
 import { getScriptEditorData } from "@/lib/script-editor-data";
 import { AutonomousImageGeneratorWorkspace } from "@/features/visuals/AutonomousImageGeneratorWorkspace";
 import { getImageGeneratorData } from "@/lib/image-generator-data";
+import { AutonomousStoryboardWorkspace } from "@/features/storyboard/AutonomousStoryboardWorkspace";
+import { getStoryboardWorkspaceData } from "@/lib/storyboard-engine";
+import { AutonomousSceneVideoWorkspace } from "@/features/video/AutonomousSceneVideoWorkspace";
+import { getSceneVideoWorkspaceData } from "@/lib/scene-video-engine";
+import { AutonomousNarrationWorkspace } from "@/features/audio/AutonomousNarrationWorkspace";
+import { getNarrationWorkspaceData } from "@/lib/narration-engine";
+import { AutonomousMusicWorkspace } from "@/features/audio/AutonomousMusicWorkspace";
+import { getMusicWorkspaceData } from "@/lib/music-engine";
 
 export async function ModuleWorkspace({
   moduleSlug,
@@ -168,6 +176,54 @@ export async function ModuleWorkspace({
       console.error("visuals.image-generator.load.failed", error);
       return (
         <AutonomousImageGeneratorWorkspace error="The MSSQL production store is unavailable. Visual generation will recover automatically when the connection returns." />
+      );
+    }
+  }
+
+  if (module.slug === "storyboard" && workspace?.slug === "storyboard-editor") {
+    try {
+      const data = await getStoryboardWorkspaceData();
+      return <AutonomousStoryboardWorkspace initial={data} />;
+    } catch (error) {
+      console.error("storyboard.storyboard-editor.load.failed", error);
+      return (
+        <AutonomousStoryboardWorkspace error="The MSSQL production store is unavailable. Storyboard planning will recover automatically when the connection returns." />
+      );
+    }
+  }
+
+  if (module.slug === "video" && workspace?.slug === "scene-video-generator") {
+    try {
+      const data = await getSceneVideoWorkspaceData();
+      return <AutonomousSceneVideoWorkspace initial={data} />;
+    } catch (error) {
+      console.error("video.scene-video-generator.load.failed", error);
+      return (
+        <AutonomousSceneVideoWorkspace error="The MSSQL production store is unavailable. Scene video generation will recover automatically when the connection returns." />
+      );
+    }
+  }
+
+  if (module.slug === "audio" && workspace?.slug === "narration-generator") {
+    try {
+      const data = await getNarrationWorkspaceData();
+      return <AutonomousNarrationWorkspace initial={data} />;
+    } catch (error) {
+      console.error("audio.narration-generator.load.failed", error);
+      return (
+        <AutonomousNarrationWorkspace error="The MSSQL production store is unavailable. Narration generation will recover automatically when the connection returns." />
+      );
+    }
+  }
+
+  if (module.slug === "audio" && workspace?.slug === "music-generator") {
+    try {
+      const data = await getMusicWorkspaceData();
+      return <AutonomousMusicWorkspace initial={data} />;
+    } catch (error) {
+      console.error("audio.music-generator.load.failed", error);
+      return (
+        <AutonomousMusicWorkspace error="The MSSQL production store is unavailable. Music generation will recover automatically when the connection returns." />
       );
     }
   }
