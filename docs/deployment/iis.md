@@ -14,7 +14,7 @@ CACSMS Studio is configured for IIS hosting on port `3008`.
 ## Build
 
 ```powershell
-cd C:\Next-Generation\cacsms-studio
+cd C:\Content-Generation\cacsms-studio
 pnpm install
 pnpm build:web
 ```
@@ -24,7 +24,7 @@ pnpm build:web
 Run PowerShell as Administrator:
 
 ```powershell
-cd C:\Next-Generation\cacsms-studio
+cd C:\Content-Generation\cacsms-studio
 pnpm iis:install
 ```
 
@@ -32,7 +32,7 @@ This creates or updates:
 
 - Site: `cacsms-studio`
 - App pool: `cacsms-studio`
-- Physical path: `C:\Next-Generation\cacsms-studio`
+- Physical path: `C:\Content-Generation\cacsms-studio`
 - HTTP binding: `*:3008`
 
 ## Install Node Runtime Service

@@ -451,6 +451,8 @@ export function ScriptEditorWorkspace({
   const [loading, setLoading] = useState(!initial && !initialError);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(initial?.generatedAt ?? null);
   const [cycleRunning, setCycleRunning] = useState(false);
+  const [streamLive, setStreamLive] = useState(false);
+  const [streamDetail, setStreamDetail] = useState("Polling fallback active while the script editor event stream connects.");
   const [previewTick, setPreviewTick] = useState(0);
   const cycleInFlight = useRef(false);
 
@@ -493,7 +495,7 @@ export function ScriptEditorWorkspace({
         throw new Error("message" in payload ? payload.message || `HTTP ${response.status}` : `HTTP ${response.status}`);
       }
       setData(payload as ScriptEditorPayload);
-      setLastSyncAt(new Date().toISOString());
+      setLastSyncAt((payload as ScriptEditorPayload).generatedAt);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Autonomous writing cycle failed.");
@@ -513,6 +515,44 @@ export function ScriptEditorWorkspace({
     }, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [refreshData]);
+
+  useEffect(() => {
+    const eventSource = new EventSource("/api/writing/script-editor/events");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as Partial<ScriptEditorPayload> & { message?: string };
+
+        if (typeof payload.message === "string" && typeof payload.generatedAt !== "string") {
+          setStreamLive(false);
+          setStreamDetail(payload.message);
+          return;
+        }
+
+        if (typeof payload.generatedAt === "string") {
+          const nextPayload = payload as ScriptEditorPayload;
+          setData(nextPayload);
+          setLastSyncAt(nextPayload.generatedAt);
+          setError(null);
+          setLoading(false);
+          setStreamLive(true);
+          setStreamDetail("SSE event stream is active with polling fallback protection.");
+        }
+      } catch {
+        setStreamLive(false);
+        setStreamDetail("Script editor SSE payload could not be parsed. Polling fallback is active.");
+      }
+    };
+
+    eventSource.onerror = () => {
+      setStreamLive(false);
+      setStreamDetail("SSE connection is unavailable. Polling fallback remains active.");
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
 
   useEffect(() => {
     void runAutonomousCycle();
@@ -595,7 +635,7 @@ export function ScriptEditorWorkspace({
             <Cell label="Stage" value={content.stage} />
             <Cell label="State" value={content.state} orange />
             <Cell label="Started" value={content.startedAt} />
-            <Cell label="Updated" value={content.updatedAt} sub={connected ? "Live sync" : "Preview mode"} />
+            <Cell label="Updated" value={content.updatedAt} sub={streamLive ? "Live event sync" : connected ? "Polling sync" : "Preview mode"} />
           </div>
 
           <Workflow active={content.activeStep} />
@@ -708,7 +748,7 @@ export function ScriptEditorWorkspace({
             </div>
 
             <div className={styles.rightColumn}>
-              <Card title="Live Agent Execution" tag={content.liveTag}>
+              <Card title="Live Agent Execution" tag={streamLive ? "Live stream" : content.liveTag}>
                 <dl className={styles.definitionListCompact}>
                   <dt>Agent</dt>
                   <dd>{content.agent.name}</dd>
@@ -726,6 +766,8 @@ export function ScriptEditorWorkspace({
                   <dd>{content.agent.retryCount}</dd>
                   <dt>Next action</dt>
                   <dd>{content.agent.nextAction}</dd>
+                  <dt>Realtime sync</dt>
+                  <dd>{streamDetail}</dd>
                 </dl>
               </Card>
 

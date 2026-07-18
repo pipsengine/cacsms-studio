@@ -570,16 +570,24 @@ async function listCandidateProductions(pool: sql.ConnectionPool, workspaceId: s
         p.MetadataJson
       FROM cacsms.Productions p
       WHERE CONVERT(nvarchar(36), p.WorkspaceId) = @workspace
-        AND p.Status NOT IN (N'archived', N'cancelled', N'published')
-        AND p.Stage IN (N'storyboard', N'audio', N'video', N'assembly', N'timeline')
+        AND p.Status NOT IN (N'archived', N'cancelled')
+        AND (
+          p.Stage IN (N'storyboard', N'audio', N'video', N'assembly', N'timeline')
+          OR p.MetadataJson LIKE N'%"autonomousStoryboard"%'
+          OR p.MetadataJson LIKE N'%"autonomousNarration"%'
+          OR p.MetadataJson LIKE N'%"autonomousMusic"%'
+        )
       ORDER BY
-        CASE p.Stage
-          WHEN N'audio' THEN 0
-          WHEN N'storyboard' THEN 1
-          WHEN N'video' THEN 2
-          WHEN N'assembly' THEN 3
-          WHEN N'timeline' THEN 4
-          ELSE 5
+        CASE
+          WHEN p.Stage = N'audio' THEN 0
+          WHEN p.MetadataJson LIKE N'%"autonomousMusic"%' THEN 1
+          WHEN p.MetadataJson LIKE N'%"autonomousNarration"%' THEN 2
+          WHEN p.Stage = N'storyboard' THEN 3
+          WHEN p.MetadataJson LIKE N'%"autonomousStoryboard"%' THEN 4
+          WHEN p.Stage = N'video' THEN 5
+          WHEN p.Stage = N'assembly' THEN 6
+          WHEN p.Stage = N'timeline' THEN 7
+          ELSE 8
         END,
         p.UpdatedAt DESC;
     `);

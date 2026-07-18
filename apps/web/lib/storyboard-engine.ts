@@ -427,13 +427,29 @@ async function listCandidateProductions(pool: sql.ConnectionPool, workspaceId: s
       FROM cacsms.Productions p
       WHERE CONVERT(nvarchar(36), p.WorkspaceId) = @workspace
         AND p.Status NOT IN (N'archived', N'cancelled')
-        AND p.Stage IN (N'storyboard', N'visual-generation', N'assembly')
+        AND (
+          p.Stage IN (N'storyboard', N'visual-generation', N'assembly')
+          OR EXISTS (
+            SELECT 1
+            FROM cacsms.ScriptWritingRuns sw
+            WHERE sw.ProductionId = p.ProductionId
+              AND sw.Status = N'completed'
+              AND sw.MandatoryGatesPassed = 1
+          )
+        )
       ORDER BY
-        CASE p.Stage
-          WHEN N'storyboard' THEN 0
-          WHEN N'visual-generation' THEN 1
-          WHEN N'assembly' THEN 2
-          ELSE 3
+        CASE
+          WHEN p.Stage = N'storyboard' THEN 0
+          WHEN EXISTS (
+            SELECT 1
+            FROM cacsms.ScriptWritingRuns sw
+            WHERE sw.ProductionId = p.ProductionId
+              AND sw.Status = N'completed'
+              AND sw.MandatoryGatesPassed = 1
+          ) THEN 1
+          WHEN p.Stage = N'visual-generation' THEN 2
+          WHEN p.Stage = N'assembly' THEN 3
+          ELSE 4
         END,
         p.UpdatedAt DESC;
     `);

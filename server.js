@@ -141,7 +141,31 @@ function onServerReady() {
   startAutonomousOpportunityScheduler();
   startAutonomousStoryStructureScheduler();
   startAutonomousScriptWritingScheduler();
+  startAutonomousStoryboardScheduler();
   startAutonomousImageGenerationScheduler();
+  startAutonomousSceneVideoScheduler();
+  startAutonomousNarrationScheduler();
+  startAutonomousMusicScheduler();
+}
+
+function startInternalEndpointScheduler(name, endpoint, intervalEnv, defaultIntervalMs, initialDelayMs) {
+  if (dev || isNamedPipe) return;
+  const intervalMs = Math.max(30_000, Number(process.env[intervalEnv] || defaultIntervalMs));
+  const run = async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
+        body: JSON.stringify({ action: "scheduler" }),
+        signal: AbortSignal.timeout(55_000)
+      });
+      if (!response.ok) console.error(`${name}.scheduler.failed`, { status: response.status });
+    } catch (error) {
+      console.error(`${name}.scheduler.failed`, { name: error instanceof Error ? error.name : "Unknown" });
+    }
+  };
+  setTimeout(run, initialDelayMs).unref();
+  setInterval(run, intervalMs).unref();
 }
 
 function startAutonomousScriptWritingScheduler() {
@@ -164,6 +188,16 @@ function startAutonomousScriptWritingScheduler() {
   setInterval(run, intervalMs).unref();
 }
 
+function startAutonomousStoryboardScheduler() {
+  startInternalEndpointScheduler(
+    "storyboard",
+    "/api/storyboard/storyboard-editor",
+    "CACSMS_STORYBOARD_INTERVAL_MS",
+    30_000,
+    37_000
+  );
+}
+
 function startAutonomousImageGenerationScheduler() {
   if (dev || isNamedPipe) return;
   const intervalMs = Math.max(30_000, Number(process.env.CACSMS_IMAGE_GENERATION_INTERVAL_MS || 45_000));
@@ -182,6 +216,36 @@ function startAutonomousImageGenerationScheduler() {
   };
   setTimeout(run, 39_000).unref();
   setInterval(run, intervalMs).unref();
+}
+
+function startAutonomousSceneVideoScheduler() {
+  startInternalEndpointScheduler(
+    "scene-video",
+    "/api/video/scene-video-generator",
+    "CACSMS_SCENE_VIDEO_INTERVAL_MS",
+    45_000,
+    43_000
+  );
+}
+
+function startAutonomousNarrationScheduler() {
+  startInternalEndpointScheduler(
+    "narration",
+    "/api/audio/narration-generator",
+    "CACSMS_NARRATION_INTERVAL_MS",
+    45_000,
+    47_000
+  );
+}
+
+function startAutonomousMusicScheduler() {
+  startInternalEndpointScheduler(
+    "music",
+    "/api/audio/music-generator",
+    "CACSMS_MUSIC_INTERVAL_MS",
+    45_000,
+    51_000
+  );
 }
 
 function startAutonomousOpportunityScheduler() {

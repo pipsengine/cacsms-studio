@@ -98,12 +98,8 @@
 
   function hrefForChild(parent, child) {
     if (parent === "Home" && child === "Executive Dashboard") return "/dashboard";
-    if (parent === "Production Pipeline" && child === "Production Life Cycle") return "/production-pipeline#life-cycle";
-    if (parent === "Production Pipeline" && child === "Current Production") return "/production-pipeline#current-production";
-    if (parent === "Production Pipeline" && child === "Pipeline Overview") return "/production-pipeline#pipeline-overview";
-    if (parent === "Production Pipeline" && child === "Schedule") return "/production-pipeline#schedule";
-    if (parent === "Production Pipeline" && child === "AI Insights") return "/production-pipeline#ai-insights";
-    if (child === "Production Pipeline") return "/production-pipeline/index.html";
+    if (parent === "Production Pipeline") return "/home/production-pipeline";
+    if (child === "Production Pipeline") return "/home/production-pipeline";
     if (child === "Production Workflow") return "/production-workflow/discover";
     if (parent === "Opportunity Intelligence" && child === "Opportunity Dashboard") return "/opportunity-intelligence";
     if (parent === "Opportunity Intelligence" && child === "Executive Recommendations") return "/opportunity-intelligence/executive-recommendations";
@@ -121,8 +117,8 @@
 
   function activeChild(parent, child) {
     const path = window.location.pathname;
-    if (parent === "Production Pipeline" && (path === "/" || path.startsWith("/production-pipeline")) && child === "Production Life Cycle") return "sub-active";
-    if ((path === "/" || path.startsWith("/production-pipeline")) && child === "Production Pipeline") return "sub-active";
+    if (parent === "Production Pipeline" && (path === "/" || path.startsWith("/production-pipeline") || path === "/home/production-pipeline") && child === "Production Life Cycle") return "sub-active";
+    if ((path === "/" || path.startsWith("/production-pipeline") || path === "/home/production-pipeline") && child === "Production Pipeline") return "sub-active";
     if (path.startsWith("/production-workflow") && child === "Production Workflow") return "sub-active";
     if (parent === "Opportunity Intelligence" && path === "/opportunity-intelligence" && child === "Opportunity Dashboard") return "sub-active";
     if (parent === "Knowledge Universe" && path === "/knowledge-universe" && child === "Executive Dashboard") return "sub-active";
@@ -131,7 +127,7 @@
 
   function activeParent(label) {
     const path = window.location.pathname;
-    if ((path === "/" || path.startsWith("/production-pipeline") || path.startsWith("/production-workflow")) && label === "Home") return "active";
+    if ((path === "/" || path.startsWith("/production-pipeline") || path === "/home/production-pipeline" || path.startsWith("/production-workflow")) && label === "Home") return "active";
     if (path.startsWith("/opportunity-intelligence") && label === "Opportunity Intelligence") return "active";
     if (path.startsWith("/knowledge-universe") && label === "Knowledge Universe") return "active";
     return "";
@@ -218,7 +214,7 @@
 
   function hrefForModule(label) {
     if (label === "Home") return "/dashboard";
-    if (label === "Production Pipeline") return "/production-pipeline";
+    if (label === "Production Pipeline") return "/home/production-pipeline";
     if (label === "Production Studio") return "/productions";
     if (label === "Content Intelligence") return "/intelligence";
     if (label === "Opportunity Intelligence") return "/opportunity-intelligence";
@@ -247,7 +243,7 @@
 
   function activePipelineParent(label) {
     const path = window.location.pathname;
-    if ((path === "/" || path.startsWith("/production-pipeline")) && label === "Production Pipeline") return "active";
+    if ((path === "/" || path.startsWith("/production-pipeline") || path === "/home/production-pipeline") && label === "Production Pipeline") return "active";
     if (path.startsWith("/production-workflow") && label === "Home") return "active";
     if (path.startsWith("/opportunity-intelligence") && label === "Opportunity Intelligence") return "active";
     if (path.startsWith("/knowledge-universe") && label === "Knowledge Universe") return "active";

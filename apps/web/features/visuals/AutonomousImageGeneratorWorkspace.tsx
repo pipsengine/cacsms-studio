@@ -411,6 +411,8 @@ export function AutonomousImageGeneratorWorkspace({
   const [loading, setLoading] = useState(!initial && !initialError);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(initial?.generatedAt ?? null);
   const [cycleRunning, setCycleRunning] = useState(false);
+  const [streamLive, setStreamLive] = useState(false);
+  const [streamDetail, setStreamDetail] = useState("Polling fallback active while the image generator event stream connects.");
   const [imageLoadState, setImageLoadState] = useState<ImageLoadState>("idle");
   const [imageLoadError, setImageLoadError] = useState<string | null>(null);
   const cycleInFlight = useRef(false);
@@ -457,7 +459,7 @@ export function AutonomousImageGeneratorWorkspace({
         throw new Error("message" in payload ? payload.message || onErrorMessage : onErrorMessage);
       }
       setData(payload as ImageGeneratorPayload);
-      setLastSyncAt(new Date().toISOString());
+      setLastSyncAt((payload as ImageGeneratorPayload).generatedAt);
       setError(null);
     },
     []
@@ -487,6 +489,44 @@ export function AutonomousImageGeneratorWorkspace({
     }, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [refreshData]);
+
+  useEffect(() => {
+    const eventSource = new EventSource("/api/visuals/image-generator/events");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as Partial<ImageGeneratorPayload> & { message?: string };
+
+        if (typeof payload.message === "string" && typeof payload.generatedAt !== "string") {
+          setStreamLive(false);
+          setStreamDetail(payload.message);
+          return;
+        }
+
+        if (typeof payload.generatedAt === "string") {
+          const nextPayload = payload as ImageGeneratorPayload;
+          setData(nextPayload);
+          setLastSyncAt(nextPayload.generatedAt);
+          setError(null);
+          setLoading(false);
+          setStreamLive(true);
+          setStreamDetail("SSE event stream is active with polling fallback protection.");
+        }
+      } catch {
+        setStreamLive(false);
+        setStreamDetail("Image generator SSE payload could not be parsed. Polling fallback is active.");
+      }
+    };
+
+    eventSource.onerror = () => {
+      setStreamLive(false);
+      setStreamDetail("SSE connection is unavailable. Polling fallback remains active.");
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
 
   useEffect(() => {
     void runAutonomousCycle();
@@ -625,7 +665,7 @@ export function AutonomousImageGeneratorWorkspace({
           <StatusPill
             tone={cycleRunning ? "warning" : hasPersistedCandidate ? (connected ? "good" : "danger") : "warning"}
             icon={<Radio size={14} />}
-            label={cycleRunning ? "Autonomy running" : hasPersistedCandidate ? (connected ? "System online" : "Awaiting sync") : "Waiting for candidate"}
+            label={cycleRunning ? "Autonomy running" : streamLive ? "Live sync" : hasPersistedCandidate ? (connected ? "Polling sync" : "Awaiting sync") : "Waiting for candidate"}
           />
           <div className={styles.agentBadge}>
             <b>{content.agent.name.slice(0, 2).toUpperCase()}</b>
@@ -656,7 +696,7 @@ export function AutonomousImageGeneratorWorkspace({
         <DataCell label="Pipeline Stage" value={content.stage} sub="Autonomous produce stage" />
         <DataCell label="State" value={content.state} tone={stateTone(content.state)} sub={content.stepLabel} />
         <DataCell label="Priority" value={content.priority} sub={`${content.variantCount} variants`} />
-        <DataCell label="Updated" value={formatClock(content.updatedAt)} sub={hasPersistedCandidate ? (connected ? "By visual agent alpha" : "Awaiting sync") : "Queue monitor"} />
+        <DataCell label="Updated" value={formatClock(content.updatedAt)} sub={streamLive ? "Live event sync" : hasPersistedCandidate ? (connected ? "Polling sync" : "Awaiting sync") : "Queue monitor"} />
         <div className={styles.contextAction}>
           <small>Routing status</small>
           <b>{content.routing.status}</b>
@@ -935,7 +975,7 @@ export function AutonomousImageGeneratorWorkspace({
         </div>
 
         <div className={styles.rightColumn}>
-            <Panel title="Live Image Agent" tag={hasPersistedCandidate ? (connected ? "Live" : "Awaiting sync") : "Waiting"}>
+            <Panel title="Live Image Agent" tag={streamLive ? "Live stream" : hasPersistedCandidate ? (connected ? "Polling" : "Awaiting sync") : "Waiting"}>
             <Rows
               compact
               items={[
@@ -947,7 +987,8 @@ export function AutonomousImageGeneratorWorkspace({
                 ["Compute Usage", formatDuration(content.agent.elapsedSeconds)],
                 ["Worker Heartbeat", content.workerHeartbeatAt ? formatTime(content.workerHeartbeatAt) : content.agent.heartbeat],
                 ["Retry Count", String(content.agent.retryCount)],
-                ["Next Action", content.agent.nextAction]
+                ["Next Action", content.agent.nextAction],
+                ["Realtime Sync", streamDetail]
               ]}
             />
           </Panel>

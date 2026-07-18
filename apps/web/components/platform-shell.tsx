@@ -272,13 +272,13 @@ function hrefForChild(moduleSlug: string, childSlug: string) {
     return "/production-workflow/discover";
   }
   if (moduleSlug === "dashboard" && childSlug === "production-pipeline") {
-    return "/production-pipeline/index.html";
+    return "/home/production-pipeline";
   }
   if (moduleSlug === "dashboard" && ["rendering-monitor", "agent-activity", "publishing-overview", "calendar", "notifications", "system-health"].includes(childSlug)) {
     return `/home/${childSlug}`;
   }
   if (moduleSlug === "productions" && childSlug === "production-pipeline") {
-    return "/production-pipeline/index.html";
+    return "/home/production-pipeline";
   }
   if (moduleSlug === "productions") return `/production-studio/${childSlug}`;
   if (moduleSlug === "intelligence") return `/content-intelligence/${childSlug}`;

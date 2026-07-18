@@ -9,16 +9,28 @@ export function requireReadAccess(request: Request) {
     return null;
   }
 
-  const requestOrigin = new URL(request.url).origin;
+  const requestUrl = new URL(request.url);
+  const requestOrigin = requestUrl.origin;
+  const publicPort = process.env.CACSMS_PUBLIC_PORT;
+  const publicOrigins = publicPort
+    ? new Set([
+        `${requestUrl.protocol}//${requestUrl.hostname}:${publicPort}`,
+        `${requestUrl.protocol}//localhost:${publicPort}`,
+        `${requestUrl.protocol}//127.0.0.1:${publicPort}`
+      ])
+    : new Set<string>();
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
   const fetchSite = request.headers.get("sec-fetch-site");
 
-  if (origin === requestOrigin) {
+  if (origin === requestOrigin || (origin && publicOrigins.has(origin))) {
     return null;
   }
 
-  if (referer?.startsWith(`${requestOrigin}/`)) {
+  if (
+    referer?.startsWith(`${requestOrigin}/`) ||
+    (referer && [...publicOrigins].some((allowedOrigin) => referer.startsWith(`${allowedOrigin}/`)))
+  ) {
     return null;
   }
 

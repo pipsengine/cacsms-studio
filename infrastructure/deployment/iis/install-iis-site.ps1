@@ -1,7 +1,7 @@
 param(
   [string]$SiteName = "cacsms-studio",
   [string]$AppPoolName = "cacsms-studio",
-  [string]$PhysicalPath = "C:\Next-Generation\cacsms-studio",
+  [string]$PhysicalPath = "C:\Content-Generation\cacsms-studio",
   [int]$Port = 3008
 )
 
