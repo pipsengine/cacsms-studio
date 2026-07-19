@@ -7,6 +7,7 @@ import {
   synthesizeMusicWav
 } from "@/lib/local-audio-renderer";
 import type { StoryboardIssue, StoryboardRouting, StoryboardScene } from "@/lib/storyboard-engine";
+import { dispatchAssetEngineBatch } from "@/lib/worker-dispatch";
 
 const MUSIC_MODEL = "CACSMS Independent Local Score Composer v1";
 const DEFAULT_BPM = 96;
@@ -920,7 +921,12 @@ export async function syncMusicProduction(productionId: string) {
 export async function runMusicScheduler(): Promise<MusicPayload> {
   const { pool, workspaceId } = await getContext();
   const rows = await listCandidateProductions(pool, workspaceId);
-  for (const row of rows.slice(0, 4)) {
+  const batch = rows.slice(0, 4);
+  await dispatchAssetEngineBatch(
+    "music-generator",
+    batch.map((row) => ({ id: row.ProductionId, title: row.Title, stage: row.Stage }))
+  );
+  for (const row of batch) {
     await materializeProduction(pool, row, true);
   }
   return getMusicWorkspaceData();

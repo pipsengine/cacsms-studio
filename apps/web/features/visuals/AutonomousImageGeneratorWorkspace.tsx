@@ -402,7 +402,7 @@ function autonomySignals(content: WorkspaceProduction, qualityScore: number) {
   return [
     {
       label: "Browser Load",
-      value: content.browserLoadStatus === "loaded" ? "Browser verified" : titleCase(content.browserLoadStatus),
+      value: content.browserLoadStatus === "loaded" ? "Asset verified" : titleCase(content.browserLoadStatus),
       tone: normalizeTone(content.browserLoadStatus)
     },
     {
@@ -689,7 +689,7 @@ export function AutonomousImageGeneratorWorkspace({
         <div>
           <div className={styles.kicker}>AUTONOMOUS VISUAL STUDIO</div>
           <h1>Autonomous Image Generator</h1>
-          <p>Persisted brief resolution, autonomous variant generation, browser verification, quality review, revision, and routing with no human input required.</p>
+          <p>Persisted brief resolution, autonomous variant generation, server-side asset verification, quality review, revision, and routing with no human input required.</p>
         </div>
         <div className={styles.headerStatus}>
           <div className={styles.clockCard}>
@@ -819,7 +819,7 @@ export function AutonomousImageGeneratorWorkspace({
               </div>
               <div className={styles.previewHeadMeta}>
                 <span>Generation ID: {content.activeAssetId ?? activeVariant?.id ?? "Pending"}</span>
-                <small>{content.preview ? "Autosaved preview" : imageLoadState === "loaded" ? "Browser verified" : "Awaiting browser acknowledgement"}</small>
+                <small>{content.preview ? "Autosaved preview" : imageLoadState === "loaded" ? "Asset verified" : "Autonomous verification in progress"}</small>
               </div>
             </div>
 
@@ -855,7 +855,7 @@ export function AutonomousImageGeneratorWorkspace({
                   {imageLoadState === "loading" ? (
                     <div className={styles.assetOverlay}>
                       <strong>Loading persisted asset URL</strong>
-                      <span>The variant remains incomplete until the browser acknowledges a successful image load.</span>
+                      <span>The autonomous worker is verifying the persisted asset URL before quality review.</span>
                     </div>
                   ) : null}
                   {imageLoadState === "failed" ? (

@@ -19,7 +19,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const denied = requireMutationAccess(request);
+  const denied = await requireMutationAccess(request);
   if (denied) {
     return denied;
   }

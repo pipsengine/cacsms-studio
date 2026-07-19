@@ -15,6 +15,7 @@ import {
 } from "@/lib/image-generator-integrity";
 import { generatePromptPng, readPngDimensions } from "@/lib/image-generator-png";
 import { renderWithLocalImageModel, type LocalImageModelRender } from "@/lib/local-image-model-runtime";
+import { dispatchAssetEngineJob } from "@/lib/worker-dispatch";
 
 const VISUAL_STEPS = [
   "Inputs validated",
@@ -378,6 +379,10 @@ async function renderIndependentVisual(prompt: string, width: number, height: nu
   return allowFallback ? renderProceduralFallback(prompt, width, height) : null;
 }
 const MAX_RETRIES = 3;
+const TARGET_VARIANT_COUNT = Math.max(
+  1,
+  Number.parseInt(process.env.CACSMS_IMAGE_GENERATION_VARIANT_COUNT ?? "3", 10) || 3
+);
 
 type VisualBrief = ReturnType<typeof briefFromRow>;
 
@@ -498,6 +503,40 @@ function parseJsonObject(value: string | null): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function summarizeModelResponse(raw: string | null) {
+  if (!raw?.trim()) return "No provider response recorded yet.";
+
+  const parsed = parseJsonObject(raw);
+  const review = parsed.review as Record<string, unknown> | undefined;
+  if (review && typeof review === "object") {
+    const score = typeof review.score === "number" ? `${review.score}%` : null;
+    const passed = review.passed === true;
+    const defects = Array.isArray(review.defects)
+      ? review.defects.filter((item): item is string => typeof item === "string")
+      : [];
+    const defectSummary = defects.length > 0 ? `: ${defects.slice(0, 2).join("; ")}` : ".";
+    return `Quality review ${passed ? "passed" : "failed"}${score ? ` at ${score}` : ""}${defectSummary}`;
+  }
+
+  const provider = typeof parsed.provider === "string" ? parsed.provider : null;
+  const model = typeof parsed.model === "string" ? parsed.model : null;
+  const workflow = typeof parsed.workflow === "string" ? parsed.workflow : null;
+  const method = typeof parsed.method === "string" ? parsed.method : null;
+  const summaryParts = [provider ?? workflow, model, method].filter(Boolean);
+  if (summaryParts.length > 0) {
+    return summaryParts.join(" · ");
+  }
+
+  if (typeof parsed.storageResult === "string" && parsed.storageResult.trim()) {
+    return parsed.storageResult;
+  }
+  if (typeof parsed.nextRecoveryAction === "string" && parsed.nextRecoveryAction.trim()) {
+    return parsed.nextRecoveryAction;
+  }
+
+  return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw;
 }
 
 function deriveRenderMode(brief: VisualBrief): RenderMode {
@@ -1510,12 +1549,136 @@ function selectActiveVariant(
   return [...variants].sort((left, right) => {
     const priorityDiff = activeVariantPriority(jobState, left) - activeVariantPriority(jobState, right);
     if (priorityDiff !== 0) return priorityDiff;
+    if (jobState === "Queued" || jobState === "Revising") {
+      return left.VariantNumber - right.VariantNumber;
+    }
     return right.VariantNumber - left.VariantNumber;
   })[0];
 }
 
+function pendingGenerationVariants(variants: (VariantRow & Partial<AssetRow>)[]) {
+  return variants.filter(
+    (variant) =>
+      variant.State === "Queued" ||
+      (!variant.ImageGenerationAssetId &&
+        !["Rejected", "Failed", "Blocked", "Completed"].includes(variant.State))
+  );
+}
+
+function approvedVariantCount(variants: (VariantRow & Partial<AssetRow>)[]) {
+  return variants.filter((variant) => variant.State === "Completed").length;
+}
+
+function jobNeedsAutonomousWork(job: JobRow | null, variants: (VariantRow & Partial<AssetRow>)[]) {
+  if (!job) return true;
+  if (["Queued", "Generating", "Uploading", "Persisting", "Validating", "Reviewing", "Revising"].includes(job.State)) {
+    return true;
+  }
+  if (job.State !== "Completed") return false;
+  return (
+    variants.length < TARGET_VARIANT_COUNT ||
+    approvedVariantCount(variants) < TARGET_VARIANT_COUNT ||
+    pendingGenerationVariants(variants).length > 0
+  );
+}
+
+async function ensureTargetVariants(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  job: JobRow,
+  brief: VisualBrief
+) {
+  const variants = await productionVariants(pool, row.ProductionId);
+  if (variants.length >= TARGET_VARIANT_COUNT) return variants;
+
+  const { width, height } = dimensionsFromAspectRatio(brief.aspectRatio);
+  for (let variantNumber = variants.length + 1; variantNumber <= TARGET_VARIANT_COUNT; variantNumber += 1) {
+    const instructions = buildRenderInstructions(
+      brief,
+      row,
+      width,
+      height,
+      `${job.ImageGenerationJobId}-v${variantNumber}`,
+      variantNumber,
+      job.RetryCount
+    );
+    await createVariant(
+      pool,
+      row.ProductionId,
+      job.ImageGenerationJobId,
+      variantNumber,
+      instructions.prompt,
+      "Queued",
+      job.RetryCount
+    );
+  }
+
+  return productionVariants(pool, row.ProductionId);
+}
+
+async function maybeResumeVariantGeneration(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  job: JobRow,
+  brief: VisualBrief,
+  metadata: Record<string, unknown>,
+  variants: (VariantRow & Partial<AssetRow>)[]
+) {
+  let nextVariants = variants;
+  if (variants.length < TARGET_VARIANT_COUNT) {
+    nextVariants = await ensureTargetVariants(pool, row, job, brief);
+  }
+  const pending = pendingGenerationVariants(nextVariants);
+  const approved = approvedVariantCount(nextVariants);
+  const needsWork = pending.length > 0 || approved < TARGET_VARIANT_COUNT;
+  if (!needsWork) {
+    return { job, variants: nextVariants };
+  }
+
+  if (needsWork && job.State === "Completed") {
+    await patchJob(pool, job.ImageGenerationJobId, {
+      state: "Queued",
+      retryCount: job.RetryCount,
+      nextRecoveryAction: `Autonomously resuming variant generation (${approved}/${TARGET_VARIANT_COUNT} approved).`,
+      storageResult: `Autonomous backfill queued ${Math.max(pending.length, TARGET_VARIANT_COUNT - approved)} remaining variant(s) for ${row.Code}.`
+    });
+    const preVisualStages = new Set(["research", "scripting", "storyboard"]);
+    if (!preVisualStages.has(row.Stage)) {
+      await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Queued"));
+    }
+    return { job: { ...job, State: "Queued" as ImageGenerationState }, variants: nextVariants };
+  }
+
+  return { job, variants: nextVariants };
+}
+
+async function advanceAssetToReviewing(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  job: JobRow,
+  variant: VariantRow & Partial<AssetRow>,
+  assetId: string,
+  metadata: Record<string, unknown>
+) {
+  await setAssetBrowserLoad(pool, assetId, "loaded");
+  await patchVariant(pool, variant.ImageGenerationVariantId, {
+    state: "Reviewing",
+    retryCount: job.RetryCount,
+    assetId,
+    storageResult: `Server verified ${createVisualAssetUrl(assetId)} without human browser acknowledgement.`
+  });
+  await patchJob(pool, job.ImageGenerationJobId, {
+    state: "Reviewing",
+    retryCount: job.RetryCount,
+    nextRecoveryAction: "Run quality gates and decide whether to approve or revise the persisted asset.",
+    storageResult: `Server verified image bytes at ${createVisualAssetUrl(assetId)}.`
+  });
+  await updateProductionState(pool, row, metadata, "visual-generation", "in-review", stateToProgress("Reviewing"));
+}
+
 function schedulerJobPriority(job: JobRow | null) {
   if (!job) return 60;
+  if (job.State === "Completed") return 58;
   const priorities: Partial<Record<ImageGenerationState, number>> = {
     Reviewing: 0,
     Validating: 10,
@@ -1565,7 +1728,7 @@ function mapProductionRecord(row: ProductionRow, brief: ReturnType<typeof briefF
     step: productionStateStep(state),
     stepLabel: stepLabelForState(state),
     variant: activeVariant?.VariantNumber ?? 1,
-    variantCount: Math.max(variants.length, 1),
+    variantCount: Math.max(TARGET_VARIANT_COUNT, variants.length),
     dueAt: toIso(row.DueAt),
     updatedAt: toIso(job?.UpdatedAt || row.UpdatedAt) ?? new Date().toISOString(),
     brief,
@@ -1605,7 +1768,7 @@ function mapProductionRecord(row: ProductionRow, brief: ReturnType<typeof briefF
       heartbeat: toIso(job?.WorkerHeartbeatAt) ?? "Not recorded",
       retryCount: job?.RetryCount ?? 0,
       nextAction: job?.NextRecoveryAction || "Await scheduler cycle.",
-      modelResponse: job?.ModelResponseJson || "No provider response recorded yet.",
+      modelResponse: summarizeModelResponse(job?.ModelResponseJson ?? null),
       storageResult: job?.StorageResult || "No storage activity recorded yet."
     },
     routing: {
@@ -1691,7 +1854,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   for (const candidate of candidates) {
     const job = await latestJob(pool, candidate.ProductionId);
     const variants = await productionVariants(pool, candidate.ProductionId);
-    if (!job || ["Queued", "Generating", "Uploading", "Persisting", "Validating", "Reviewing", "Revising"].includes(job.State)) {
+    if (jobNeedsAutonomousWork(job, variants)) {
       activeCandidates.push({ row: candidate, job, variants });
     }
   }
@@ -1705,6 +1868,14 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   const selectedJob = selected?.job ?? null;
   const selectedVariants = selected?.variants ?? [];
   if (!row) return getImageGeneratorData();
+
+  void dispatchAssetEngineJob({
+    engine: "image-generator",
+    productionId: row.ProductionId,
+    title: row.Title,
+    stage: row.Stage,
+    metadata: { jobState: selectedJob?.State ?? "new", code: row.Code }
+  });
 
   const { metadata, brief, valid, reason } = ensureVisualBriefMetadata(row);
   let job = selectedJob;
@@ -1726,10 +1897,71 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   if (!job) {
     const jobId = await createJob(pool, row.ProductionId, "Queued");
     const { width, height } = dimensionsFromAspectRatio(brief.aspectRatio);
-    const queuedInstructions = buildRenderInstructions(brief, row, width, height, jobId, 1, 0);
-    await createVariant(pool, row.ProductionId, jobId, 1, queuedInstructions.prompt, "Queued", 0);
+    for (let variantNumber = 1; variantNumber <= TARGET_VARIANT_COUNT; variantNumber += 1) {
+      const instructions = buildRenderInstructions(brief, row, width, height, `${jobId}-v${variantNumber}`, variantNumber, 0);
+      await createVariant(pool, row.ProductionId, jobId, variantNumber, instructions.prompt, "Queued", 0);
+    }
     await updateProductionState(pool, row, metadata, "visual-generation", "queued", stateToProgress("Queued"));
     return getImageGeneratorData();
+  }
+
+  if (["Queued", "Generating", "Uploading", "Persisting", "Revising", "Reviewing"].includes(job.State)) {
+    variants = await ensureTargetVariants(pool, row, job, brief);
+  }
+
+  if (job) {
+    const resumed = await maybeResumeVariantGeneration(pool, row, job, brief, metadata, variants);
+    job = resumed.job;
+    variants = resumed.variants;
+  }
+
+  if (job.State === "Validating") {
+    const activeVariant = selectActiveVariant(job, variants);
+    if (!activeVariant?.ImageGenerationAssetId) {
+      await patchJob(pool, job.ImageGenerationJobId, {
+        state: "Failed",
+        retryCount: job.RetryCount,
+        failureReason: "The validating variant does not reference a persisted asset record.",
+        nextRecoveryAction: "Regenerate the asset and recreate its SQL records.",
+        storageResult: "Validation failed because the variant had no persisted asset."
+      });
+      return getImageGeneratorData();
+    }
+    const asset = await imageAsset(pool, activeVariant.ImageGenerationAssetId);
+    if (!asset) {
+      await patchJob(pool, job.ImageGenerationJobId, {
+        state: "Failed",
+        retryCount: job.RetryCount,
+        failureReason: "The validating asset record could not be loaded from Microsoft SQL Server.",
+        nextRecoveryAction: "Recreate the asset record and rerun validation.",
+        storageResult: "Validation failed because the asset record was missing."
+      });
+      return getImageGeneratorData();
+    }
+    if (asset.BrowserLoadStatus !== "loaded") {
+      const validationErrors = await validateStoredAsset(asset.ImageGenerationAssetId);
+      if (validationErrors.length) {
+        await setAssetBrowserLoad(pool, asset.ImageGenerationAssetId, "failed");
+        await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
+          state: "Blocked",
+          retryCount: job.RetryCount,
+          assetId: asset.ImageGenerationAssetId,
+          failureReason: `Asset endpoint validation failed: ${validationErrors.join(" ")}`,
+          storageResult: validationErrors.join(" ")
+        });
+        await patchJob(pool, job.ImageGenerationJobId, {
+          state: "Blocked",
+          retryCount: job.RetryCount,
+          failureReason: `Asset endpoint validation failed: ${validationErrors.join(" ")}`,
+          nextRecoveryAction: "Verify the persisted asset URL, storage file, and reverse-proxy path.",
+          storageResult: validationErrors.join(" ")
+        });
+        await updateProductionState(pool, row, metadata, "visual-generation", "blocked", stateToProgress("Blocked"));
+        return getImageGeneratorData();
+      }
+    }
+    await advanceAssetToReviewing(pool, row, job, activeVariant, asset.ImageGenerationAssetId, metadata);
+    job = { ...job, State: "Reviewing" as ImageGenerationState };
   }
 
   if (job.State === "Reviewing") {
@@ -1796,12 +2028,29 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
         qualityScore: gate.score,
         qualitySummary: JSON.stringify({ quality: gate.quality, passed: true, defects: [], audit: gate.audit })
       });
+      const refreshedVariants = await productionVariants(pool, row.ProductionId);
+      const pending = pendingGenerationVariants(refreshedVariants);
+      const reviewSummary = JSON.stringify({
+        ...parseJsonObject(job.ModelResponseJson),
+        review: { quality: gate.quality, score: gate.score, passed: true, defects: [], audit: gate.audit }
+      });
+      if (pending.length > 0) {
+        await patchJob(pool, job.ImageGenerationJobId, {
+          state: "Queued",
+          retryCount: job.RetryCount,
+          nextRecoveryAction: `Approved variant ${activeVariant.VariantNumber}. Generating ${pending.length} remaining variant(s).`,
+          storageResult: `Approved asset ${asset.ImageGenerationAssetId}; ${pending.length} variant(s) still queued.`,
+          modelResponse: reviewSummary
+        });
+        await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Queued"));
+        return getImageGeneratorData();
+      }
       await patchJob(pool, job.ImageGenerationJobId, {
         state: "Completed",
         retryCount: job.RetryCount,
         nextRecoveryAction: "No recovery required.",
         storageResult: `Approved asset ${asset.ImageGenerationAssetId} routed to timeline assembly.`,
-        modelResponse: JSON.stringify({ ...parseJsonObject(job.ModelResponseJson), review: { quality: gate.quality, score: gate.score, passed: true, defects: [], audit: gate.audit } })
+        modelResponse: reviewSummary
       });
       await updateProductionState(pool, row, metadata, "assembly", "approved", 100);
       return getImageGeneratorData();
@@ -2047,11 +2296,11 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   await patchJob(pool, job.ImageGenerationJobId, {
     state: "Validating",
     retryCount: job.RetryCount,
-    nextRecoveryAction: "Await browser load acknowledgement for the persisted asset URL.",
+    nextRecoveryAction: "Run server-side asset verification and quality review.",
     storageResult: `Verified image bytes at ${createVisualAssetUrl(assetId)}.`,
     modelResponse: JSON.stringify({ ...providerAudit, assetId, checksum: rendered.checksum, width: dimensions.width, height: dimensions.height })
   });
-  await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Validating"));
+  await advanceAssetToReviewing(pool, row, job, activeVariant, assetId, metadata);
   return getImageGeneratorData();
 }
 
@@ -2062,20 +2311,9 @@ export async function acknowledgeImageAssetLoad(productionId: string, assetId: s
   const { metadata } = ensureVisualBriefMetadata(row);
   const job = await latestJob(pool, productionId);
   if (!job) throw new Error("No active image-generation job exists for this production.");
-  await setAssetBrowserLoad(pool, assetId, "loaded");
-  await patchVariant(pool, variantId, {
-    state: "Reviewing",
-    retryCount: job.RetryCount,
-    assetId,
-    storageResult: `Browser successfully loaded ${createVisualAssetUrl(assetId)}.`
-  });
-  await patchJob(pool, job.ImageGenerationJobId, {
-    state: "Reviewing",
-    retryCount: job.RetryCount,
-    nextRecoveryAction: "Run quality gates and decide whether to approve or revise the persisted asset.",
-    storageResult: `Browser successfully loaded ${createVisualAssetUrl(assetId)}.`
-  });
-  await updateProductionState(pool, row, metadata, "visual-generation", "in-review", stateToProgress("Reviewing"));
+  const variant = (await productionVariants(pool, productionId)).find((item) => item.ImageGenerationVariantId === variantId);
+  if (!variant) throw new Error("The variant for this asset acknowledgement could not be found.");
+  await advanceAssetToReviewing(pool, row, job, variant, assetId, metadata);
   return getImageGeneratorData();
 }
 
@@ -2127,4 +2365,13 @@ export async function loadImageGeneratorAsset(assetId: string) {
     }
   }
   return { asset, bytes };
+}
+
+export async function isVisualGenerationStageComplete(productionId: string) {
+  const pool = await getMssqlPool();
+  await ensureSchema(pool);
+  const job = await latestJob(pool, productionId);
+  if (!job || job.State !== "Completed") return false;
+  const variants = await productionVariants(pool, productionId);
+  return approvedVariantCount(variants) >= TARGET_VARIANT_COUNT;
 }

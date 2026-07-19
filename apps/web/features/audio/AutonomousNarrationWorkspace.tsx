@@ -10,6 +10,7 @@ import {
   Headphones,
   LockKeyhole,
   Radio,
+  Sparkles,
   Square,
   Volume2
 } from "lucide-react";
@@ -187,7 +188,10 @@ function buildWaitingWorkspace(lastSync: string | null, reason?: string): Narrat
       detail: "Polling adapter is active. SSE event streaming is reserved until the workspace stream is live."
     },
     recovery: "Continue autonomous polling until storyboard narration and real audio output are available.",
-    currentAction: "Waiting for storyboard to persist a narration-ready package."
+    currentAction: "Waiting for storyboard to persist a narration-ready package.",
+    audioAssetId: null,
+    audioUrl: null,
+    audioFileName: null
   };
 }
 
@@ -201,6 +205,7 @@ export function AutonomousNarrationWorkspace({
   const [payload, setPayload] = useState<NarrationPayload | undefined>(initial);
   const [requestError, setRequestError] = useState<string | null>(error ?? null);
   const [lastSync, setLastSync] = useState<string | null>(initial?.generatedAt ?? null);
+  const [selectedProductionId, setSelectedProductionId] = useState<string | null>(initial?.productions[0]?.id ?? null);
   const [cycleRunning, setCycleRunning] = useState(false);
   const [streamMode, setStreamMode] = useState<"sse" | "polling">("polling");
   const [streamLive, setStreamLive] = useState(false);
@@ -211,7 +216,9 @@ export function AutonomousNarrationWorkspace({
 
   const refresh = useCallback(async () => {
     try {
-      const data = await readApiPayload<NarrationPayload>(await fetch("/api/audio/narration-generator", { cache: "no-store" }));
+      const data = await readApiPayload<NarrationPayload>(
+        await fetch("/api/audio/narration-generator", { cache: "no-store", credentials: "include" })
+      );
       setPayload(data);
       setLastSync(data.generatedAt);
       setRequestError(null);
@@ -227,6 +234,7 @@ export function AutonomousNarrationWorkspace({
         await fetch("/api/audio/narration-generator", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ action: "scheduler" })
         })
       );
@@ -296,19 +304,37 @@ export function AutonomousNarrationWorkspace({
     return () => window.clearInterval(timer);
   }, [runScheduler]);
 
-  const content = useMemo(
-    () => payload?.productions[0] ?? buildWaitingWorkspace(lastSync, requestError ?? undefined),
-    [lastSync, payload, requestError]
-  );
+  const content = useMemo(() => {
+    if (!payload?.productions.length) {
+      return buildWaitingWorkspace(lastSync, requestError ?? undefined);
+    }
+    return (
+      payload.productions.find((production) => production.id === selectedProductionId) ??
+      payload.productions[0] ??
+      buildWaitingWorkspace(lastSync, requestError ?? undefined)
+    );
+  }, [lastSync, payload, requestError, selectedProductionId]);
+  const summary = payload?.summary;
+  const audioSrc = content.audioAssetId
+    ? `/api/audio/narration-generator/assets/${content.audioAssetId}`
+    : null;
   const issue = content.issues.find((entry) => !entry.resolved) ?? content.issues[0] ?? null;
   const adapter = {
     ...content.adapter,
     mode: streamMode,
-    live: streamLive,
+    live: streamLive || content.adapter.live,
     detail: adapterDetail,
     lastSync: lastSync ?? content.adapter.lastSync
   } as const;
   const currentSegment = content.transcript.find((segment) => segment.current) ?? content.transcript[0] ?? null;
+
+  useEffect(() => {
+    if (!payload?.productions.length) return;
+    if (selectedProductionId && payload.productions.some((production) => production.id === selectedProductionId)) {
+      return;
+    }
+    setSelectedProductionId(payload.productions[0]?.id ?? null);
+  }, [payload, selectedProductionId]);
 
   return (
     <div className={styles.page}>
@@ -351,6 +377,56 @@ export function AutonomousNarrationWorkspace({
           </button>
         </div>
       </div>
+
+      {payload && payload.productions.length > 1 ? (
+        <div className={styles.productionSelector}>
+          {payload.productions.map((production) => (
+            <button
+              className={production.id === content.id ? styles.productionActive : styles.productionOption}
+              key={production.id}
+              onClick={() => setSelectedProductionId(production.id)}
+              type="button"
+            >
+              <b>{production.code}</b>
+              <span>{production.title}</span>
+              <em>{production.state}</em>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {summary ? (
+        <div className={styles.summaryStrip}>
+          <div className={styles.summaryCard}>
+            <Sparkles size={14} />
+            <span>
+              Queue
+              <b>{summary.total} production{summary.total === 1 ? "" : "s"} tracked</b>
+            </span>
+          </div>
+          <div className={styles.summaryCard}>
+            <Volume2 size={14} />
+            <span>
+              Active synthesis
+              <b>{summary.active} in progress</b>
+            </span>
+          </div>
+          <div className={styles.summaryCard}>
+            <Check size={14} />
+            <span>
+              Timeline ready
+              <b>{summary.ready} approved for routing</b>
+            </span>
+          </div>
+          <div className={styles.summaryCard}>
+            <AlertTriangle size={14} />
+            <span>
+              Blocked
+              <b>{summary.blocked} critical blocker{summary.blocked === 1 ? "" : "s"} · {summary.averageQuality}% avg quality</b>
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {requestError ? (
         <div className={`${styles.banner} ${styles.dangerBanner}`}>
@@ -590,6 +666,16 @@ export function AutonomousNarrationWorkspace({
               </div>
               <span>{content.metadata.sampleRate} · {content.metadata.bitDepth}</span>
             </div>
+
+            {audioSrc ? (
+              <div className={styles.audioPlayer}>
+                <Volume2 size={15} />
+                <audio controls preload="metadata" src={audioSrc}>
+                  <track kind="captions" />
+                </audio>
+                <span>{content.audioFileName ?? "Persisted narration WAV"}</span>
+              </div>
+            ) : null}
 
             <div className={styles.transcript}>
               {content.transcript.length ? (

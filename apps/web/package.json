@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm generate:static-config && next build",
+    "generate:static-config": "tsx scripts/generate-static-config.ts",
     "start": "node .next/standalone/apps/web/server.js",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

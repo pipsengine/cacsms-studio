@@ -7,6 +7,7 @@ import {
   synthesizeNarrationWav
 } from "@/lib/local-audio-renderer";
 import type { StoryboardIssue, StoryboardRouting, StoryboardScene, StoryboardShot } from "@/lib/storyboard-engine";
+import { dispatchAssetEngineBatch } from "@/lib/worker-dispatch";
 
 const NARRATION_STEPS = [
   "Script validated",
@@ -223,6 +224,9 @@ export type NarrationProduction = {
   adapter: NarrationAdapter;
   recovery: string | null;
   currentAction: string;
+  audioAssetId: string | null;
+  audioUrl: string | null;
+  audioFileName: string | null;
 };
 
 export type NarrationPayload = {
@@ -731,7 +735,9 @@ function buildNarrationState(
 ) {
   if (!storyboardReady(storyboard)) return { state: "Waiting for Storyboard", step: 0, progress: 12 };
   if (!storyboard) return { state: "Waiting for Storyboard", step: 0, progress: 12 };
-  if (!storyboard.routing.approved) return { state: "Waiting for Storyboard Approval", step: 0, progress: 22 };
+  if (!storyboard.routing.approved && !transcript.length) {
+    return { state: "Waiting for Storyboard Approval", step: 0, progress: 22 };
+  }
   if (!transcript.length) return { state: "Waiting for Narration Source", step: 0, progress: 26 };
   if (!existing || changed) return { state: "Voice Profile Resolved", step: 1, progress: 36 };
   if (existing.routing.approved) return { state: "Timeline Ready", step: 5, progress: 96 };
@@ -776,19 +782,39 @@ async function listCandidateProductions(pool: sql.ConnectionPool, workspaceId: s
       WHERE CONVERT(nvarchar(36), p.WorkspaceId) = @workspace
         AND p.Status NOT IN (N'archived', N'cancelled')
         AND (
-          p.Stage IN (N'storyboard', N'audio', N'video', N'assembly', N'timeline')
+          p.Stage IN (
+            N'research',
+            N'scripting',
+            N'storyboard',
+            N'visual-generation',
+            N'audio-generation',
+            N'quality-assurance',
+            N'assembly',
+            N'publishing',
+            N'completed',
+            N'audio',
+            N'video',
+            N'timeline'
+          )
           OR p.MetadataJson LIKE N'%"autonomousStoryboard"%'
           OR p.MetadataJson LIKE N'%"autonomousNarration"%'
+          OR EXISTS (
+            SELECT 1
+            FROM cacsms.ScriptWritingRuns sw
+            WHERE sw.ProductionId = p.ProductionId
+              AND sw.Status = N'completed'
+              AND sw.MandatoryGatesPassed = 1
+          )
         )
       ORDER BY
         CASE
-          WHEN p.Stage = N'audio' THEN 0
+          WHEN p.Stage IN (N'audio-generation', N'audio') THEN 0
           WHEN p.MetadataJson LIKE N'%"autonomousNarration"%' THEN 1
-          WHEN p.Stage = N'storyboard' THEN 2
-          WHEN p.MetadataJson LIKE N'%"autonomousStoryboard"%' THEN 3
-          WHEN p.Stage = N'video' THEN 4
+          WHEN p.Stage = N'visual-generation' THEN 2
+          WHEN p.Stage = N'storyboard' THEN 3
+          WHEN p.MetadataJson LIKE N'%"autonomousStoryboard"%' THEN 4
           WHEN p.Stage = N'assembly' THEN 5
-          WHEN p.Stage = N'timeline' THEN 6
+          WHEN p.Stage IN (N'video', N'timeline') THEN 6
           ELSE 7
         END,
         p.UpdatedAt DESC;
@@ -997,7 +1023,10 @@ function deriveProduction(row: ProductionRow, metadata: Record<string, unknown>,
             ? "Waiting for storyboard continuity and approval gates before narration synthesis can proceed."
             : generatedSeconds > 0
               ? "Synthesized narration exists and is moving through audio quality review."
-              : `Packaging narration text, pronunciation evidence, and voice constraints for ${activeShotRef?.title ?? activeSceneRef?.title ?? "the active scene"}.`
+              : `Packaging narration text, pronunciation evidence, and voice constraints for ${activeShotRef?.title ?? activeSceneRef?.title ?? "the active scene"}.`,
+      audioAssetId: snapshot.audioAssetId ?? null,
+      audioUrl: snapshot.audioUrl ?? null,
+      audioFileName: snapshot.audioFileName ?? null
     } satisfies NarrationProduction
   };
 }
@@ -1085,7 +1114,10 @@ async function completeLocalNarrationSynthesis(derived: ReturnType<typeof derive
         bitDepth: "16-bit PCM"
       },
       recovery: snapshot.recovery,
-      currentAction: "Independent local narration WAV completed and routed to Timeline Studio."
+      currentAction: "Independent local narration WAV completed and routed to Timeline Studio.",
+      audioAssetId: asset.assetId,
+      audioUrl: asset.url,
+      audioFileName: asset.fileName
     }
   };
 }
@@ -1134,7 +1166,12 @@ export async function syncNarrationProduction(productionId: string) {
 export async function runNarrationScheduler(): Promise<NarrationPayload> {
   const { pool, workspaceId } = await getContext();
   const rows = await listCandidateProductions(pool, workspaceId);
-  for (const row of rows.slice(0, 4)) {
+  const batch = rows.slice(0, 4);
+  await dispatchAssetEngineBatch(
+    "narration-generator",
+    batch.map((row) => ({ id: row.ProductionId, title: row.Title, stage: row.Stage }))
+  );
+  for (const row of batch) {
     await materializeProduction(pool, row, true);
   }
   return getNarrationWorkspaceData();

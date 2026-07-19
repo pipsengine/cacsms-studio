@@ -5,7 +5,6 @@ import {
   Activity,
   AlertTriangle,
   Check,
-  ChevronRight,
   Clock3,
   Clapperboard,
   Database,
@@ -217,6 +216,13 @@ function activeShot(scene: StoryboardScene | null, content: StoryboardProduction
   return scene.shots.find((shot) => shot.id === content.activeShotId) ?? scene.shots.find((shot) => shot.status === "Planning") ?? scene.shots[0] ?? null;
 }
 
+function shotPreviewUrl(shot: StoryboardShot | null | undefined) {
+  if (!shot) return null;
+  if (shot.previewUrl) return shot.previewUrl;
+  if (shot.previewAssetId) return `/api/storyboard/storyboard-editor/assets/${shot.previewAssetId}`;
+  return null;
+}
+
 export function AutonomousStoryboardWorkspace({
   initial,
   error
@@ -227,6 +233,7 @@ export function AutonomousStoryboardWorkspace({
   const [payload, setPayload] = useState<StoryboardPayload | undefined>(initial);
   const [requestError, setRequestError] = useState<string | null>(error ?? null);
   const [lastSync, setLastSync] = useState<string | null>(initial?.generatedAt ?? null);
+  const [selectedProductionId, setSelectedProductionId] = useState<string | null>(initial?.productions[0]?.id ?? null);
   const [cycleRunning, setCycleRunning] = useState(false);
   const [streamMode, setStreamMode] = useState<"sse" | "polling">("polling");
   const [streamLive, setStreamLive] = useState(false);
@@ -239,7 +246,9 @@ export function AutonomousStoryboardWorkspace({
 
   const refresh = useCallback(async () => {
     try {
-      const data = await readApiPayload<StoryboardPayload>(await fetch("/api/storyboard/storyboard-editor", { cache: "no-store" }));
+      const data = await readApiPayload<StoryboardPayload>(
+        await fetch("/api/storyboard/storyboard-editor", { cache: "no-store", credentials: "include" })
+      );
       setPayload(data);
       setLastSync(data.generatedAt);
       setRequestError(null);
@@ -255,6 +264,7 @@ export function AutonomousStoryboardWorkspace({
         await fetch("/api/storyboard/storyboard-editor", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ action: "scheduler" })
         })
       );
@@ -324,10 +334,17 @@ export function AutonomousStoryboardWorkspace({
     return () => window.clearInterval(timer);
   }, [runScheduler]);
 
-  const content = useMemo(
-    () => payload?.productions[0] ?? buildWaitingWorkspace(lastSync, requestError ?? undefined),
-    [lastSync, payload, requestError]
-  );
+  const content = useMemo(() => {
+    if (!payload?.productions.length) {
+      return buildWaitingWorkspace(lastSync, requestError ?? undefined);
+    }
+    return (
+      payload.productions.find((production) => production.id === selectedProductionId) ??
+      payload.productions[0] ??
+      buildWaitingWorkspace(lastSync, requestError ?? undefined)
+    );
+  }, [lastSync, payload, requestError, selectedProductionId]);
+  const summary = payload?.summary;
   const currentScene = useMemo(
     () => content.scenes.find((scene) => scene.id === selectedSceneId) ?? activeScene(content),
     [content, selectedSceneId]
@@ -342,21 +359,54 @@ export function AutonomousStoryboardWorkspace({
   const qualityScore = overallQuality(content);
   const scenePlannedShots = currentScene?.shots.filter((shot) => shot.status !== "Queued").length ?? 0;
   const shotIndex = currentScene && currentShot ? currentScene.shots.findIndex((shot) => shot.id === currentShot.id) + 1 : 0;
+  const heroPreviewUrl = shotPreviewUrl(currentShot);
+  const generatedFrameCount = content.scenes.reduce(
+    (total, scene) => total + scene.shots.filter((shot) => shot.previewRenderMode === "photoreal-human").length,
+    0
+  );
   const adapter = {
     ...content.adapter,
     mode: streamMode,
-    live: streamLive,
+    live: streamLive || content.adapter.live,
     detail: adapterDetail,
     lastSync: lastSync ?? content.adapter.lastSync
   } as const;
 
   useEffect(() => {
-    setSelectedSceneId(content.activeSceneId ?? content.scenes[0]?.id ?? null);
+    if (!payload?.productions.length) return;
+    if (selectedProductionId && payload.productions.some((production) => production.id === selectedProductionId)) {
+      return;
+    }
+    setSelectedProductionId(payload.productions[0]?.id ?? null);
+  }, [payload, selectedProductionId]);
+
+  useEffect(() => {
+    if (!content.scenes.length) {
+      setSelectedSceneId(null);
+      return;
+    }
+    setSelectedSceneId((current) => {
+      if (current && content.scenes.some((scene) => scene.id === current)) {
+        return current;
+      }
+      return content.activeSceneId ?? content.scenes[0]?.id ?? null;
+    });
   }, [content.activeSceneId, content.id, content.scenes]);
 
   useEffect(() => {
-    setSelectedShotId(currentScene?.shots.find((shot) => shot.status === "Planning")?.id ?? currentScene?.shots[0]?.id ?? null);
+    if (!currentScene?.shots.length) {
+      setSelectedShotId(null);
+      return;
+    }
+    setSelectedShotId((current) => {
+      if (current && currentScene.shots.some((shot) => shot.id === current)) {
+        return current;
+      }
+      return currentScene.shots.find((shot) => shot.status === "Planning")?.id ?? currentScene.shots[0]?.id ?? null;
+    });
   }, [currentScene?.id, currentScene?.shots]);
+
+  const workflowComplete = /production ready|routed to visual studio|sequencing/i.test(content.state);
 
   return (
     <div className={styles.page}>
@@ -390,15 +440,32 @@ export function AutonomousStoryboardWorkspace({
               <small>{content.agent.model}</small>
             </span>
           </div>
-          <button className={styles.routeButton} disabled>
-            <LockKeyhole size={15} />
+          <button className={styles.routeButton} disabled type="button" aria-label="Autonomous routing status">
+            {content.routing.approved ? <Check size={15} /> : <LockKeyhole size={15} />}
             <span>
-              Approve &amp; Route
+              Autonomous Routing
               <small>{content.routing.status}</small>
             </span>
           </button>
         </div>
       </div>
+
+      {payload && payload.productions.length > 1 ? (
+        <div className={styles.productionSelector}>
+          {payload.productions.map((production) => (
+            <button
+              className={production.id === content.id ? styles.productionActive : styles.productionOption}
+              key={production.id}
+              onClick={() => setSelectedProductionId(production.id)}
+              type="button"
+            >
+              <b>{production.code}</b>
+              <span>{production.title}</span>
+              <em>{production.state}</em>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {requestError ? (
         <div className={`${styles.banner} ${styles.dangerBanner}`}>
@@ -464,21 +531,40 @@ export function AutonomousStoryboardWorkspace({
           <div className={styles.workflowSegment} key={step}>
             <div
               className={`${styles.step} ${
-                index < content.step ? styles.done : index === content.step ? styles.current : styles.pending
+                index < content.step || (workflowComplete && index <= content.step)
+                  ? styles.done
+                  : index === content.step
+                    ? styles.current
+                    : styles.pending
               }`}
             >
-              <span>{index < content.step ? <Check size={13} /> : index + 1}</span>
+              <span>{index < content.step || (workflowComplete && index <= content.step) ? <Check size={13} /> : index + 1}</span>
               <div>
                 <b>{step}</b>
-                <small>{index < content.step ? "Complete" : index === content.step ? "In progress" : "Pending"}</small>
+                <small>
+                  {index < content.step || (workflowComplete && index <= content.step)
+                    ? "Complete"
+                    : index === content.step
+                      ? "In progress"
+                      : "Pending"}
+                </small>
               </div>
             </div>
-            {index < WORKFLOW_STEPS.length - 1 ? <div className={`${styles.stepLine} ${index < content.step ? styles.done : ""}`} /> : null}
+            {index < WORKFLOW_STEPS.length - 1 ? (
+              <div className={`${styles.stepLine} ${index < content.step || (workflowComplete && index <= content.step) ? styles.done : ""}`} />
+            ) : null}
           </div>
         ))}
       </div>
 
       <div className={styles.summaryStrip}>
+        <div className={styles.summaryCard}>
+          <Sparkles size={14} />
+          <span>
+            Queue
+            <b>{summary?.total ?? (payload?.productions.length ?? 0)} production{(summary?.total ?? payload?.productions.length ?? 0) === 1 ? "" : "s"} tracked</b>
+          </span>
+        </div>
         <div className={styles.summaryCard}>
           <Sparkles size={14} />
           <span>
@@ -497,14 +583,7 @@ export function AutonomousStoryboardWorkspace({
           <AlertTriangle size={14} />
           <span>
             Open Issues
-            <b>{openIssues} active autonomous recovery item{openIssues === 1 ? "" : "s"}</b>
-          </span>
-        </div>
-        <div className={styles.summaryCard}>
-          <ChevronRight size={14} />
-          <span>
-            Next Route
-            <b>{content.routing.visualStudio}</b>
+            <b>{openIssues} active · {summary?.blocked ?? 0} blocked · {summary?.ready ?? 0} ready</b>
           </span>
         </div>
       </div>
@@ -622,7 +701,15 @@ export function AutonomousStoryboardWorkspace({
                   <span>{currentShot ? `SHOT ${String(currentShot.number).padStart(2, "0")}` : "SHOT --"}</span>
                 </div>
                 <div className={styles.heroCenter}>
-                  <div className={styles.heroGlyph}>▥ ▤ ▦</div>
+                  {heroPreviewUrl ? (
+                    <img
+                      alt={currentShot?.title ?? "Storyboard frame preview"}
+                      className={styles.heroImage}
+                      src={heroPreviewUrl}
+                    />
+                  ) : (
+                    <div className={styles.heroGlyph}>▥ ▤ ▦</div>
+                  )}
                   <strong>{currentShot?.title ?? "Storyboard frame is waiting for a verified shot plan."}</strong>
                   <p>{currentShot?.visualFocus ?? "Visual focus appears here after script-to-scene decomposition completes."}</p>
                 </div>
@@ -664,7 +751,15 @@ export function AutonomousStoryboardWorkspace({
                     <div className={`${styles.thumb} ${styles[`thumb${(shot.number - 1) % 6}`] ?? ""}`}>
                       <span>{String(shot.number).padStart(2, "0")}</span>
                       <b>{shot.title}</b>
-                      <div className={styles.screen}>▥ ▤ ▦</div>
+                      {shotPreviewUrl(shot) ? (
+                        <img
+                          alt={shot.title}
+                          className={styles.thumbImage}
+                          src={shotPreviewUrl(shot)!}
+                        />
+                      ) : (
+                        <div className={styles.screen}>▥ ▤ ▦</div>
+                      )}
                     </div>
                     <small>{formatDuration(shot.durationSeconds)} · {shot.camera}</small>
                     <p>{shot.summary}</p>
@@ -717,13 +812,17 @@ export function AutonomousStoryboardWorkspace({
                   <span>{expectedAssets} ASSETS</span>
                 </div>
                 <p className={styles.infoText}>
-                  {content.shotCount} storyboard frames · {content.sceneCount} scene packets · {scenePlannedShots}/{currentScene?.shots.length ?? 0} active scene shots planned
+                  {generatedFrameCount}/{content.shotCount} original frame previews · {content.sceneCount} scene packets · {scenePlannedShots}/{currentScene?.shots.length ?? 0} active scene shots planned
                 </p>
               </section>
 
               <div className={styles.selectedShot}>
                 <b>Selected Shot Preview</b>
-                <div className={styles.bigScreen}>▥ ▤ ▦</div>
+                {heroPreviewUrl ? (
+                  <img alt={currentShot?.title ?? "Selected storyboard frame"} className={styles.bigScreenImage} src={heroPreviewUrl} />
+                ) : (
+                  <div className={styles.bigScreen}>▥ ▤ ▦</div>
+                )}
                 <div className={styles.selectedShotTags}>
                   <span>{currentShot?.framing ?? "Framing pending"}</span>
                   <span>{currentShot?.camera ?? "Camera pending"}</span>
@@ -845,7 +944,7 @@ export function AutonomousStoryboardWorkspace({
               <div className={styles.routeStage}>
                 <small>Storyboard Gate</small>
                 <strong>{content.routing.status}</strong>
-                <span>{content.routing.approved ? "Routing can progress automatically." : "Quality and continuity gates still control release."}</span>
+                <span>{content.routing.approved ? "Autonomous release enabled" : "Quality gates control release"}</span>
               </div>
               <div className={styles.routeStage}>
                 <small>Visual Studio</small>

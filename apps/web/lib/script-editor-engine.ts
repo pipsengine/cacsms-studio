@@ -1,5 +1,6 @@
 import sql from "mssql";
 import { getMssqlPool } from "@/lib/database/mssql";
+import { dispatchAssetEngineJob } from "@/lib/worker-dispatch";
 
 const WRITING_STATES = [
   "waiting",
@@ -2041,6 +2042,14 @@ export async function runScriptWritingScheduler() {
     if (["archived", "cancelled"].includes(prod.status.toLowerCase())) {
       continue;
     }
+
+    void dispatchAssetEngineJob({
+      engine: "script-writing",
+      productionId: prod.id,
+      title: prod.title,
+      stage: prod.stage,
+      metadata: { status: prod.status }
+    });
 
     try {
       await runScriptEditorAutomation(prod.id, "sync");

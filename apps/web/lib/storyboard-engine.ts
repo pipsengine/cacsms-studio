@@ -1,6 +1,13 @@
 import crypto from "node:crypto";
 import sql from "mssql";
 import { getMssqlPool } from "@/lib/database/mssql";
+import { dispatchAssetEngineBatch } from "@/lib/worker-dispatch";
+import {
+  buildPhotorealStoryboardPrompt,
+  persistLocalStoryboardFrame,
+  readLocalStoryboardFrame,
+  renderStoryboardPhotorealFrame
+} from "@/lib/local-storyboard-frame-renderer";
 
 const STORYBOARD_STEPS = [
   "Script validated",
@@ -116,6 +123,12 @@ export type StoryboardShot = {
   continuityStatus: string;
   status: string;
   assetExpectation: string;
+  previewAssetId?: string | null;
+  previewUrl?: string | null;
+  previewFileName?: string | null;
+  previewChecksumSha256?: string | null;
+  previewRenderMode?: "photoreal-human" | "original-3d-scene" | null;
+  previewSource?: "local" | "image-generator" | null;
 };
 
 export type StoryboardScene = {
@@ -306,6 +319,12 @@ function toIso(value: Date | string | null | undefined) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function titleCase(value: string) {
+  return value
+    .replaceAll("-", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function checksum(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
@@ -428,7 +447,19 @@ async function listCandidateProductions(pool: sql.ConnectionPool, workspaceId: s
       WHERE CONVERT(nvarchar(36), p.WorkspaceId) = @workspace
         AND p.Status NOT IN (N'archived', N'cancelled')
         AND (
-          p.Stage IN (N'storyboard', N'visual-generation', N'assembly')
+          p.Stage IN (
+            N'research',
+            N'scripting',
+            N'storyboard',
+            N'visual-generation',
+            N'audio-generation',
+            N'quality-assurance',
+            N'assembly',
+            N'publishing',
+            N'completed'
+          )
+          OR p.MetadataJson LIKE N'%"autonomousStoryboard"%'
+          OR p.MetadataJson LIKE N'%"scriptBody"%'
           OR EXISTS (
             SELECT 1
             FROM cacsms.ScriptWritingRuns sw
@@ -440,16 +471,18 @@ async function listCandidateProductions(pool: sql.ConnectionPool, workspaceId: s
       ORDER BY
         CASE
           WHEN p.Stage = N'storyboard' THEN 0
+          WHEN p.MetadataJson LIKE N'%"autonomousStoryboard"%' THEN 1
           WHEN EXISTS (
             SELECT 1
             FROM cacsms.ScriptWritingRuns sw
             WHERE sw.ProductionId = p.ProductionId
               AND sw.Status = N'completed'
               AND sw.MandatoryGatesPassed = 1
-          ) THEN 1
-          WHEN p.Stage = N'visual-generation' THEN 2
-          WHEN p.Stage = N'assembly' THEN 3
-          ELSE 4
+          ) THEN 2
+          WHEN p.Stage = N'scripting' THEN 3
+          WHEN p.Stage = N'visual-generation' THEN 4
+          WHEN p.Stage = N'assembly' THEN 5
+          ELSE 6
         END,
         p.UpdatedAt DESC;
     `);
@@ -1085,29 +1118,47 @@ function deriveStoryboardData(
     bodyFromMetadata ||
     sections.map((section) => sanitizeText(section.content, 2000)).filter(Boolean).join("\n\n");
   const hasScript = wordCount(scriptText) > 0;
-  const durationSeconds =
-    parseDuration(metadata.durationSeconds) ??
-    parseDuration(metadata.duration) ??
-    Math.max(60, Math.round((version?.wordCount ?? wordCount(scriptText)) / 150) * 60);
-  const scenes = hasScript ? buildScenes(scriptText, sections, durationSeconds) : [];
-  const issues = detectIssues(scenes, sources, checks, hasScript);
-  const quality = hasScript
-    ? buildQuality(scenes, durationSeconds, sources, checks, version)
-    : {
-        coverage: 0,
-        flow: 0,
-        diversity: 0,
-        continuity: 0,
-        timing: 0,
-        brand: qualityFromChecks(checks, "brand", 0),
-        safety: qualityFromChecks(checks, "safety", 0)
-      };
-  const workflow = buildStoryboardState(row, scenes, quality, issues, hasScript);
-  const routing = buildRouting(row, workflow.state, quality, generatedAt);
   const sourceVersionId = version?.id ?? null;
   const sourceVersionLabel = version?.label ?? "Persisted script body";
   const sourceRunId = scriptRun?.id ?? null;
   const sourceChecksum = checksum(`${sourceVersionId ?? "metadata"}:${scriptText}`);
+  const snapshotMatches =
+    Boolean(existingSnapshot) &&
+    existingSnapshot!.sourceChecksum === sourceChecksum &&
+    existingSnapshot!.sourceVersionId === sourceVersionId &&
+    existingSnapshot!.scenes.length > 0;
+  const durationSeconds =
+    snapshotMatches && existingSnapshot
+      ? existingSnapshot.durationSeconds
+      : (parseDuration(metadata.durationSeconds) ??
+        parseDuration(metadata.duration) ??
+        Math.max(60, Math.round((version?.wordCount ?? wordCount(scriptText)) / 150) * 60));
+  const scenes =
+    snapshotMatches && existingSnapshot
+      ? existingSnapshot.scenes
+      : hasScript
+        ? buildScenes(scriptText, sections, durationSeconds)
+        : [];
+  const issues =
+    snapshotMatches && existingSnapshot
+      ? existingSnapshot.issues
+      : detectIssues(scenes, sources, checks, hasScript);
+  const quality =
+    snapshotMatches && existingSnapshot
+      ? existingSnapshot.quality
+      : hasScript
+        ? buildQuality(scenes, durationSeconds, sources, checks, version)
+        : {
+            coverage: 0,
+            flow: 0,
+            diversity: 0,
+            continuity: 0,
+            timing: 0,
+            brand: qualityFromChecks(checks, "brand", 0),
+            safety: qualityFromChecks(checks, "safety", 0)
+          };
+  const workflow = buildStoryboardState(row, scenes, quality, issues, hasScript);
+  const routing = buildRouting(row, workflow.state, quality, generatedAt);
   const changed =
     !existingSnapshot ||
     existingSnapshot.sourceChecksum !== sourceChecksum ||
@@ -1124,13 +1175,13 @@ function deriveStoryboardData(
     sceneCount: scenes.length,
     shotCount: scenes.reduce((total, scene) => total + scene.shots.length, 0),
     durationSeconds,
-    structure: buildStructure(durationSeconds),
+    structure: snapshotMatches && existingSnapshot ? existingSnapshot.structure : buildStructure(durationSeconds),
     scenes,
     quality,
     issues,
     routing,
     recovery:
-      hasScript && issues.length
+      hasScript && issues.some((issue) => !issue.resolved)
         ? "Automatic continuity, timing, and evidence recovery remains active until all storyboard gates pass."
         : hasScript
           ? "Storyboard package is ready for controlled downstream routing."
@@ -1152,8 +1203,8 @@ function deriveStoryboardData(
       code: row.Code,
       title: row.Title,
       chapter: asString(metadata.chapter, `Chapter 01 · ${row.Title}`),
-      stage: row.Stage,
-      priority: row.Priority,
+      stage: titleCase(row.Stage),
+      priority: titleCase(row.Priority),
       state: workflow.state,
       step: workflow.step,
       progress: clamp(Math.max(row.Progress, workflow.progress)),
@@ -1216,13 +1267,339 @@ async function materializeProduction(
   const sources = await loadScriptSources(pool, scriptRun?.id ?? null);
   const checks = await loadScriptChecks(pool, scriptRun?.id ?? null);
   const decisions = await loadScriptDecisions(pool, scriptRun?.id ?? null);
-  const derived = deriveStoryboardData(row, metadata, scriptRun, version, sections, sources, checks, decisions, existingSnapshot);
+  let derived = deriveStoryboardData(row, metadata, scriptRun, version, sections, sources, checks, decisions, existingSnapshot);
 
-  if (persist && derived.changed) {
-    await persistStoryboardSnapshot(pool, row, metadata, derived.snapshot);
+  if (persist) {
+    derived = await completeStoryboardFrameGeneration(pool, row, derived);
+    if (derived.changed) {
+      await persistStoryboardSnapshot(pool, row, metadata, derived.snapshot);
+    }
+    if (derived.snapshot.routing.approved) {
+      await seedVisualGenerationBrief(pool, row, metadata, derived);
+    }
   }
 
   return derived.production;
+}
+
+function countGeneratedFrames(scenes: StoryboardScene[]) {
+  return scenes.reduce(
+    (total, scene) => total + scene.shots.filter((shot) => Boolean(shot.previewAssetId)).length,
+    0
+  );
+}
+
+function needsPhotorealPreview(shot: StoryboardShot, scenes: StoryboardScene[]) {
+  if (!shot.previewAssetId || shot.previewRenderMode !== "photoreal-human") return true;
+  let usage = 0;
+  for (const scene of scenes) {
+    for (const candidate of scene.shots) {
+      if (candidate.previewAssetId === shot.previewAssetId) usage += 1;
+    }
+  }
+  return usage > 1;
+}
+
+type PhotorealImageAsset = {
+  assetId: string;
+  fileName: string;
+  checksumSha256: string;
+  url: string;
+  variantNumber: number;
+};
+
+async function loadProductionPhotorealImageAssets(pool: sql.ConnectionPool, productionId: string) {
+  try {
+    const result = await pool.request().input("productionId", sql.NVarChar(36), productionId).query<{
+      ImageGenerationAssetId: string;
+      FileName: string;
+      ChecksumSha256: string;
+      VariantNumber: number;
+    }>(`
+      SELECT
+        CONVERT(nvarchar(36), a.ImageGenerationAssetId) AS ImageGenerationAssetId,
+        a.FileName,
+        a.ChecksumSha256,
+        v.VariantNumber
+      FROM cacsms.ImageGenerationVariants v
+      INNER JOIN cacsms.ImageGenerationAssets a ON a.ImageGenerationAssetId = v.ImageGenerationAssetId
+      WHERE CONVERT(nvarchar(36), v.ProductionId) = @productionId
+        AND v.ImageGenerationAssetId IS NOT NULL
+        AND a.BrowserLoadStatus = N'loaded'
+      ORDER BY v.VariantNumber ASC, v.UpdatedAt DESC;
+    `);
+    const seen = new Set<string>();
+    const assets: PhotorealImageAsset[] = [];
+    for (const row of result.recordset) {
+      if (!row?.ImageGenerationAssetId || seen.has(row.ImageGenerationAssetId)) continue;
+      seen.add(row.ImageGenerationAssetId);
+      assets.push({
+        assetId: row.ImageGenerationAssetId,
+        fileName: row.FileName,
+        checksumSha256: row.ChecksumSha256,
+        url: `/api/visuals/image-generator/assets/${row.ImageGenerationAssetId}`,
+        variantNumber: row.VariantNumber
+      });
+    }
+    return assets;
+  } catch {
+    return [];
+  }
+}
+
+function clearShotPreview(shot: StoryboardShot): StoryboardShot {
+  return {
+    ...shot,
+    previewAssetId: null,
+    previewUrl: null,
+    previewFileName: null,
+    previewChecksumSha256: null,
+    previewRenderMode: null,
+    previewSource: null
+  };
+}
+
+function linkImageGeneratorPreview(shot: StoryboardShot, asset: PhotorealImageAsset) {
+  return {
+    ...shot,
+    previewAssetId: asset.assetId,
+    previewUrl: asset.url,
+    previewFileName: asset.fileName,
+    previewChecksumSha256: asset.checksumSha256,
+    previewRenderMode: "photoreal-human" as const,
+    previewSource: "image-generator" as const
+  };
+}
+
+async function completeStoryboardFrameGeneration(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  derived: ReturnType<typeof deriveStoryboardData>
+): Promise<ReturnType<typeof deriveStoryboardData>> {
+  if (!derived.snapshot.scenes.length) return derived;
+
+  const maxPerRun = Math.max(
+    1,
+    Number.parseInt(process.env.CACSMS_STORYBOARD_FRAMES_PER_CYCLE ?? "3", 10) || 3
+  );
+  const maxImageGenLinks = Math.max(
+    1,
+    Number.parseInt(process.env.CACSMS_STORYBOARD_IMAGEGEN_LINKS_PER_CYCLE ?? "3", 10) || 3
+  );
+  const imageGenAssets = await loadProductionPhotorealImageAssets(pool, row.ProductionId);
+  const reservedAssetIds = new Set<string>();
+  for (const scene of derived.snapshot.scenes) {
+    for (const shot of scene.shots) {
+      if (!shot.previewAssetId || needsPhotorealPreview(shot, derived.snapshot.scenes)) continue;
+      reservedAssetIds.add(shot.previewAssetId);
+    }
+  }
+
+  let linked = 0;
+  let rendered = 0;
+  const updatedScenes: StoryboardScene[] = [];
+
+  for (const scene of derived.snapshot.scenes) {
+    const updatedShots: StoryboardShot[] = [];
+    for (const shot of scene.shots) {
+      if (!needsPhotorealPreview(shot, derived.snapshot.scenes)) {
+        updatedShots.push(shot);
+        continue;
+      }
+
+      const availableAsset = imageGenAssets.find((asset) => !reservedAssetIds.has(asset.assetId));
+      if (availableAsset && linked < maxImageGenLinks) {
+        reservedAssetIds.add(availableAsset.assetId);
+        updatedShots.push(linkImageGeneratorPreview(shot, availableAsset));
+        linked += 1;
+        continue;
+      }
+
+      if (rendered >= maxPerRun) {
+        updatedShots.push(clearShotPreview(shot));
+        continue;
+      }
+
+      const prompt = buildPhotorealStoryboardPrompt({
+        productionTitle: row.Title,
+        sceneTitle: scene.title,
+        shotTitle: shot.title,
+        framing: shot.framing,
+        camera: shot.camera,
+        visualFocus: shot.visualFocus,
+        summary: shot.summary
+      });
+
+      try {
+        const frameSeed = `${row.ProductionId}:${shot.id}:${scene.number}:${shot.number}`;
+        const renderedFrame = await renderStoryboardPhotorealFrame(prompt, frameSeed, 1280, 720);
+        const asset = await persistLocalStoryboardFrame(row.ProductionId, shot.id, prompt, renderedFrame.bytes);
+        updatedShots.push({
+          ...shot,
+          previewAssetId: asset.assetId,
+          previewUrl: asset.url,
+          previewFileName: asset.fileName,
+          previewChecksumSha256: asset.checksumSha256,
+          previewRenderMode: "photoreal-human",
+          previewSource: "local"
+        });
+        rendered += 1;
+      } catch (error) {
+        console.warn("storyboard.photoreal-frame.failed", {
+          productionId: row.ProductionId,
+          shotId: shot.id,
+          message: error instanceof Error ? error.message : "Unknown render failure"
+        });
+        updatedShots.push(clearShotPreview(shot));
+      }
+    }
+    updatedScenes.push({ ...scene, shots: updatedShots });
+  }
+
+  if (linked === 0 && rendered === 0) return derived;
+
+  const generatedAt = new Date().toISOString();
+  const frameCount = countGeneratedFrames(updatedScenes);
+  const snapshot: PersistedStoryboardSnapshot = {
+    ...derived.snapshot,
+    generatedAt,
+    scenes: updatedScenes,
+    recovery: `Linked ${linked} Image Generator frame${linked === 1 ? "" : "s"} and rendered ${rendered} unique local storyboard preview${rendered === 1 ? "" : "s"} (${frameCount}/${derived.snapshot.shotCount} shots covered).`
+  };
+  const activeScene =
+    updatedScenes.find((scene) => scene.status === "Planning") ??
+    updatedScenes[Math.min(2, Math.max(0, updatedScenes.length - 1))] ??
+    null;
+  const activeShot = activeScene?.shots.find((shot) => shot.status === "Planning") ?? activeScene?.shots[0] ?? null;
+
+  return {
+    snapshot,
+    changed: true,
+    production: {
+      ...derived.production,
+      scenes: updatedScenes,
+      activeSceneId: activeScene?.id ?? derived.production.activeSceneId ?? null,
+      activeShotId: activeShot?.id ?? derived.production.activeShotId ?? null,
+      updatedAt: generatedAt,
+      recovery: snapshot.recovery,
+      currentAction: snapshot.recovery ?? derived.production.currentAction
+    }
+  };
+}
+
+async function seedVisualGenerationBrief(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  metadata: Record<string, unknown>,
+  derived: ReturnType<typeof deriveStoryboardData>
+) {
+  const activeScene =
+    derived.snapshot.scenes.find((scene) => scene.id === derived.production.activeSceneId) ??
+    derived.snapshot.scenes.find((scene) => scene.status === "Planning") ??
+    derived.snapshot.scenes[0] ??
+    null;
+  const activeShot =
+    activeScene?.shots.find((shot) => shot.id === derived.production.activeShotId) ??
+    activeScene?.shots.find((shot) => shot.status === "Planning") ??
+    activeScene?.shots[0] ??
+    null;
+  if (!activeScene || !activeShot) return;
+
+  const existingBrief = asObject(asObject(metadata.visualGeneration).brief);
+  if (asString(existingBrief.prompt, "").includes(activeShot.visualFocus)) return;
+
+  const prompt = buildPhotorealStoryboardPrompt({
+    productionTitle: row.Title,
+    sceneTitle: activeScene.title,
+    shotTitle: activeShot.title,
+    framing: activeShot.framing,
+    camera: activeShot.camera,
+    visualFocus: activeShot.visualFocus,
+    summary: activeShot.summary
+  });
+  const merged = {
+    ...metadata,
+    visualGeneration: {
+      ...asObject(metadata.visualGeneration),
+      brief: {
+        purpose: asString(existingBrief.purpose, `Create photoreal human visual assets for ${row.Title}.`),
+        scene: activeScene.title,
+        subject: activeShot.visualFocus,
+        composition: activeShot.framing,
+        style: "Photorealistic, cinematic, realistic human subjects, corporate documentary still.",
+        aspectRatio: asString(existingBrief.aspectRatio, "16:9 (1280x720)"),
+        brandProfile: asString(existingBrief.brandProfile, "CACSMS Corporate 2026"),
+        prompt,
+        required: ["Primary subject", "Brand-safe palette", "Storyboard-aligned framing"],
+        prohibited: ["Fantasy", "Cartoon style", "Unapproved logos"],
+        typography: asString(existingBrief.typography, "No text except approved interface labels"),
+        safeArea: asString(existingBrief.safeArea, "10% all sides"),
+        originality: "Must be original and unique to this storyboard package",
+        references: [`SB-${row.Code}`, activeScene.id, activeShot.id]
+      }
+    }
+  };
+
+  await pool
+    .request()
+    .input("productionId", sql.NVarChar(36), row.ProductionId)
+    .input("metadata", sql.NVarChar(sql.MAX), JSON.stringify(merged))
+    .input("stage", sql.NVarChar(100), row.Stage === "storyboard" ? "visual-generation" : row.Stage)
+    .query(`
+      UPDATE cacsms.Productions
+      SET MetadataJson = @metadata,
+          Stage = CASE WHEN Stage = N'storyboard' THEN @stage ELSE Stage END,
+          UpdatedAt = SYSUTCDATETIME()
+      WHERE CONVERT(nvarchar(36), ProductionId) = @productionId;
+    `);
+}
+
+export async function loadStoryboardFrameAsset(assetId: string) {
+  const normalized = sanitizeText(assetId, 80);
+  if (!/^[a-f0-9]{32}$/i.test(normalized)) {
+    throw new Error("Invalid storyboard frame asset id.");
+  }
+  const { pool, workspaceId } = await getContext();
+  const result = await pool
+    .request()
+    .input("workspace", sql.NVarChar(36), workspaceId)
+    .input("needle", sql.NVarChar(120), `%${normalized}%`)
+    .query<ProductionRow>(`
+      SELECT TOP(8)
+        CONVERT(nvarchar(36), p.ProductionId) AS ProductionId,
+        p.Code,
+        p.Title,
+        p.ProductionType,
+        p.Stage,
+        p.Status,
+        p.Priority,
+        ISNULL(p.Progress, 0) AS Progress,
+        p.UpdatedAt,
+        p.MetadataJson
+      FROM cacsms.Productions p
+      WHERE CONVERT(nvarchar(36), p.WorkspaceId) = @workspace
+        AND p.MetadataJson LIKE @needle
+      ORDER BY p.UpdatedAt DESC;
+    `);
+
+  for (const row of result.recordset) {
+    const snapshot = safeMetadataSnapshot(parseMetadata(row.MetadataJson));
+    if (!snapshot) continue;
+    for (const scene of snapshot.scenes) {
+      for (const shot of scene.shots) {
+        if (shot.previewAssetId !== normalized || !shot.previewFileName || !shot.previewChecksumSha256) continue;
+        const bytes = await readLocalStoryboardFrame(row.ProductionId, shot.previewFileName, shot.previewChecksumSha256);
+        return {
+          bytes,
+          mimeType: "image/png",
+          fileName: shot.previewFileName,
+          checksumSha256: shot.previewChecksumSha256
+        };
+      }
+    }
+  }
+
+  throw new Error("Storyboard frame asset not found.");
 }
 
 export async function getStoryboardWorkspaceData(): Promise<StoryboardPayload> {
@@ -1262,7 +1639,12 @@ export async function syncStoryboardProduction(productionId: string) {
 export async function runStoryboardScheduler(): Promise<StoryboardPayload> {
   const { pool, workspaceId } = await getContext();
   const rows = await listCandidateProductions(pool, workspaceId);
-  for (const row of rows.slice(0, 4)) {
+  const batch = rows.slice(0, 4);
+  await dispatchAssetEngineBatch(
+    "storyboard",
+    batch.map((row) => ({ id: row.ProductionId, title: row.Title, stage: row.Stage }))
+  );
+  for (const row of batch) {
     await materializeProduction(pool, row, true);
   }
   return getStoryboardWorkspaceData();

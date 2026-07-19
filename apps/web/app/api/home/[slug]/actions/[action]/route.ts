@@ -4,7 +4,7 @@ import {runOperationalAction} from "@/lib/home-operational-data";
 import { requireMutationAccess } from "@/app/api/_utils/write-access";
 
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string; action: string }> }) {
-  const denied = requireMutationAccess(request);
+  const denied = await requireMutationAccess(request, "production.write");
   if (denied) return denied;
   const { slug, action } = await params;
   if (!homeOperationalPages[slug]) return NextResponse.json({ message: "Home page endpoint not found." }, { status: 404 });

@@ -139,6 +139,10 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    void fetch("/api/auth/session", { credentials: "include" }).catch(() => undefined);
+  }, []);
+
   function toggleSystem() {
     setSystemRunning((current) => {
       const next = !current;

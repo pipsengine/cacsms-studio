@@ -5,6 +5,7 @@ import sql from "mssql";
 import type { BrowserLoadStatus } from "@/lib/image-generator-integrity";
 import { getMssqlPool } from "@/lib/database/mssql";
 import type { StoryboardIssue, StoryboardRouting, StoryboardScene, StoryboardShot } from "@/lib/storyboard-engine";
+import { dispatchAssetEngineBatch } from "@/lib/worker-dispatch";
 
 const VIDEO_WORKFLOW_STEPS = [
   "Inputs validated",
@@ -1338,7 +1339,12 @@ export async function syncSceneVideoProduction(productionId: string) {
 export async function runSceneVideoScheduler(): Promise<SceneVideoPayload> {
   const { pool, workspaceId } = await getContext();
   const rows = await listCandidateProductions(pool, workspaceId);
-  for (const row of rows.slice(0, 4)) {
+  const batch = rows.slice(0, 4);
+  await dispatchAssetEngineBatch(
+    "scene-video-generator",
+    batch.map((row) => ({ id: row.ProductionId, title: row.Title, stage: row.Stage }))
+  );
+  for (const row of batch) {
     await materializeProduction(pool, row, true);
   }
   return getSceneVideoWorkspaceData();

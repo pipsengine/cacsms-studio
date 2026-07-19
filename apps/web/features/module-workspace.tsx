@@ -67,6 +67,12 @@ import { AutonomousNarrationWorkspace } from "@/features/audio/AutonomousNarrati
 import { getNarrationWorkspaceData } from "@/lib/narration-engine";
 import { AutonomousMusicWorkspace } from "@/features/audio/AutonomousMusicWorkspace";
 import { getMusicWorkspaceData } from "@/lib/music-engine";
+import { AutonomousAssetOperationsWorkspace } from "@/features/assets/AutonomousAssetOperationsWorkspace";
+import { getAssetOperationsOverview } from "@/lib/asset-operations-data";
+import { AutoAssembleWorkspace, MasterTimelineWorkspace } from "@/features/timeline/TimelineAssemblyWorkspaces";
+import { QualityDashboardWorkspace } from "@/features/quality/QualityDashboardWorkspace";
+import { ExportDashboardWorkspace } from "@/features/exports/ExportDashboardWorkspace";
+import { PublishingDashboardWorkspace } from "@/features/publishing/PublishingDashboardWorkspace";
 
 export async function ModuleWorkspace({
   moduleSlug,
@@ -154,6 +160,26 @@ export async function ModuleWorkspace({
 
   if (module.slug === "publishing" && workspace?.slug === "scheduler") { return <AutonomousPublishingSchedulerPage />; }
 
+  if (module.slug === "publishing" && workspace?.slug === "publishing-dashboard") {
+    try { return <PublishingDashboardWorkspace />; } catch (error) { console.error("publishing.dashboard.load.failed", error); }
+  }
+
+  if (module.slug === "timeline" && workspace?.slug === "master-timeline") {
+    try { return <MasterTimelineWorkspace />; } catch (error) { console.error("timeline.master.load.failed", error); }
+  }
+
+  if (module.slug === "timeline" && workspace?.slug === "auto-assemble") {
+    try { return <AutoAssembleWorkspace />; } catch (error) { console.error("timeline.auto-assemble.load.failed", error); }
+  }
+
+  if (module.slug === "quality" && workspace?.slug === "quality-dashboard") {
+    try { return <QualityDashboardWorkspace />; } catch (error) { console.error("quality.dashboard.load.failed", error); }
+  }
+
+  if (module.slug === "exports" && workspace?.slug === "export-dashboard") {
+    try { return <ExportDashboardWorkspace />; } catch (error) { console.error("exports.dashboard.load.failed", error); }
+  }
+
   if (module.slug === "collaboration" && workspace?.slug === "assignments") {
     try { return <AutonomousAssignmentsPage />; } catch (error) { console.error("collaboration.assignments.load.failed", error); }
   }
@@ -224,6 +250,20 @@ export async function ModuleWorkspace({
       console.error("audio.music-generator.load.failed", error);
       return (
         <AutonomousMusicWorkspace error="The MSSQL production store is unavailable. Music generation will recover automatically when the connection returns." />
+      );
+    }
+  }
+
+  if (module.slug === "assets" && workspace?.slug === "all-assets") {
+    try {
+      const data = await getAssetOperationsOverview();
+      return <AutonomousAssetOperationsWorkspace initial={data} />;
+    } catch (error) {
+      console.error("assets.all-assets.load.failed", error);
+      return (
+        <AutonomousAssetOperationsWorkspace
+          initialError="The MSSQL asset store is unavailable. Asset operations will recover automatically when the connection returns."
+        />
       );
     }
   }
