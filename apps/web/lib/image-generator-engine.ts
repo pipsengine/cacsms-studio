@@ -376,6 +376,14 @@ const PHOTOREAL_HUMAN_NEGATIVE_PROMPT = [
   "missing fingers",
   "fused limbs",
   "distorted eyes",
+  "asymmetric eyes",
+  "deformed face",
+  "disfigured face",
+  "melted face",
+  "smudged face",
+  "blurry face",
+  "waxy skin",
+  "doll face",
   "text artifacts",
   "watermark",
   "logo",
@@ -775,8 +783,9 @@ function buildPhotorealPrompt(brief: VisualBrief, row: ProductionRow, variantNum
     ? "For Lagos corporate scenes, show Black Nigerian and West African business professionals in contemporary office/workwear; do not default to traditional, ceremonial, religious or festival clothing unless the persisted scene brief explicitly requires it."
     : "Use contemporary professional clothing appropriate to the resolved locale unless the persisted scene brief explicitly requires traditional or ceremonial attire.";
   return [
-    "Photorealistic documentary photograph of a Lagos Nigeria corporate AI operations room, wide-angle group scene, not a close-up portrait, not a studio portrait, not a beauty shot.",
-    "Show three Black Nigerian or West African adult business professionals with natural dark-brown skin tones, contemporary corporate clothing, and credible enterprise roles.",
+    "Photorealistic documentary photograph of a Lagos Nigeria corporate AI operations room, medium-wide scene, not a beauty shot.",
+    "Prioritize large, sharp, symmetrical natural human faces with detailed eyes, visible pupils, natural skin texture, and original synthetic identity.",
+    "Show one or two primary Black Nigerian or West African adult business professionals in the foreground; add a third person only if the scene requires a group scale.",
     "One clear foreground professional is fully inside the 10 percent safe area, with complete head and upper body visible, visible hands using a laptop, tablet, control console or workstation.",
     "The surrounding AI operations room must remain readable: analytics screens, maintenance workflow dashboard, desks, glass partitions, and modern enterprise equipment.",
     "Use natural expression, original synthetic identity, no celebrity likeness, no known-person imitation, believable eye detail, skin texture, hair, clothing folds, and accurate body proportions.",
@@ -800,9 +809,10 @@ function buildRevisionPrompt(brief: VisualBrief, row: ProductionRow, variantNumb
   const base = buildPhotorealPrompt(brief, row, variantNumber, retryCount);
   return [
     base,
-    "Mandatory retry correction: use a wider camera distance, leave clear headroom and side margins, keep every face fully visible, keep the operations-room background sharp enough to read, and show the Lagos/Nigerian corporate context clearly.",
+    "Mandatory retry correction: enlarge readable face area, keep faces symmetrical and undistorted, sharpen eyes and skin texture, and avoid melted or smudged facial features.",
+    "Use a wider camera distance only if faces remain large and fully visible; leave clear headroom and side margins.",
     "Hands must show five distinct fingers with natural knuckle joints, no fused or melted fingers, no extra digits, and natural contact with laptop, tablet, or desk surface.",
-    "Faces must have sharp eyes with visible pupils, natural skin texture, and no plastic or smudged facial detail.",
+    "Faces must have sharp eyes with visible pupils, natural skin texture, symmetric structure, and no plastic, doll-like, or disfigured facial detail.",
     "Do not create a single-person office portrait. Do not create a white European corporate portrait. Do not create a generic home office or empty office background.",
     `Rejected defects to correct in plain terms: ${defects.slice(0, 600)}`
   ].join(" ");
@@ -1017,6 +1027,9 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   const centerOffset = asFraction(compositionEvidence.centerOffset, 1);
   const blurScore = asFraction(compositionEvidence.blurScore, 0);
   const handBlurScore = asFraction(compositionEvidence.handBlurScore, 0);
+  const faceBlurScore = asFraction(compositionEvidence.faceBlurScore, 0);
+  const faceSymmetryScore = asFraction(compositionEvidence.faceSymmetryScore, 0);
+  const facialQualityPass = compositionEvidence.facialQualityPass === true;
   const laplacianVariance = asNumber(compositionEvidence.laplacianVariance, 0);
   const handLaplacianVariance = asNumber(compositionEvidence.handLaplacianVariance, 0);
   const lowQualityHumansScore = asFraction(semanticEvidence.scores.low_quality_humans, 1);
@@ -1051,7 +1064,20 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   const quality: VisualQuality = {
     brief: 94,
     humanPhotorealism: productionPhotoreal && hasVisibleHumanEvidence && lowQualityHumansScore < 0.26 ? 93 : productionPhotoreal ? 62 : 18,
-    facialRealism: productionPhotoreal && hasVisibleHumanEvidence && semanticEvidence.passedPhotographicStyle && lowQualityHumansScore < 0.24 ? 92 : productionPhotoreal ? 58 : 24,
+    facialRealism:
+      productionPhotoreal &&
+      hasVisibleHumanEvidence &&
+      semanticEvidence.passedPhotographicStyle &&
+      facialQualityPass &&
+      faceBlurScore >= 0.42 &&
+      faceSymmetryScore >= 0.58 &&
+      lowQualityHumansScore < 0.22
+        ? 93
+        : productionPhotoreal && faceBlurScore >= 0.34
+          ? 68
+          : productionPhotoreal
+            ? 54
+            : 24,
     anatomy: productionPhotoreal && semanticEvidence.passedAnatomyRisk ? anatomyFromValidator : productionPhotoreal ? 58 : 38,
     subjectDiversity: productionPhotoreal && hasVisibleHumanEvidence ? 90 : productionPhotoreal ? 52 : 72,
     lightingPerspective: productionPhotoreal ? 91 : 76,
@@ -1092,6 +1118,11 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   }
   if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && detectedFaces < 1) {
     defects.unshift("Facial visibility failed: no complete, natural human face was detected in the production frame.");
+  }
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && detectedFaces >= 1 && !facialQualityPass) {
+    defects.unshift(
+      `Facial realism failed: detected face lacks production-grade sharpness or symmetry (face blur ${(faceBlurScore * 100).toFixed(0)}%, symmetry ${(faceSymmetryScore * 100).toFixed(0)}%).`
+    );
   }
   if (instructions.mode.mode === "photoreal-human" && !semanticEvidence.available) {
     defects.unshift(`Semantic validator unavailable: ${semanticEvidence.error ?? "local CLIP validator could not run."}`);

@@ -138,6 +138,27 @@ def main() -> None:
         cropped_risk = True
     laplacian_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     blur_score = min(1.0, laplacian_variance / 95.0)
+    face_blur_scores: list[float] = []
+    face_symmetry_scores: list[float] = []
+    for rect in faces[:4]:
+        x, y, rw, rh = [int(value) for value in rect]
+        face_roi = gray[max(0, y): min(gray.shape[0], y + rh), max(0, x): min(gray.shape[1], x + rw)]
+        if face_roi.size == 0:
+            continue
+        face_blur_scores.append(min(1.0, float(cv2.Laplacian(face_roi, cv2.CV_64F).var()) / 120.0))
+        if rw >= 24:
+            mid = max(1, rw // 2)
+            left = face_roi[:, :mid]
+            right = cv2.flip(face_roi[:, rw - mid :], 1)
+            min_w = min(left.shape[1], right.shape[1])
+            if min_w >= 8 and left.shape[0] >= 8:
+                left = left[:, :min_w].astype(np.float32)
+                right = right[:, :min_w].astype(np.float32)
+                diff = np.mean(np.abs(left - right)) / 255.0
+                face_symmetry_scores.append(max(0.0, 1.0 - diff * 2.4))
+    face_blur_score = max(face_blur_scores) if face_blur_scores else 0.0
+    face_symmetry_score = max(face_symmetry_scores) if face_symmetry_scores else 0.0
+    facial_quality_pass = face_count >= 1 and face_blur_score >= 0.42 and face_symmetry_score >= 0.58
     if subject_box:
         sx, sy, sw, sh = [int(value) for value in subject_box]
         hand_top = sy + max(1, int(sh * 0.42))
@@ -194,7 +215,7 @@ def main() -> None:
         "empty_environment": empty_signal,
         "cartoon_illustration": 0.04,
         "three_d_avatar": 0.04,
-        "low_quality_humans": 0.55 if face_count == 0 else 0.18,
+        "low_quality_humans": 0.55 if face_count == 0 else max(0.12, 0.34 - face_blur_score * 0.22),
     }
 
     model_id = "opencv-haar-human-evidence"
@@ -240,6 +261,9 @@ def main() -> None:
             "handLaplacianVariance": hand_laplacian_variance,
             "handBlurScore": hand_blur_score,
             "handBlurPass": hand_blur_pass,
+            "faceBlurScore": face_blur_score,
+            "faceSymmetryScore": face_symmetry_score,
+            "facialQualityPass": facial_quality_pass,
             "subjectCoveragePass": subject_coverage_pass,
             "focalSubjectPass": focal_subject_pass,
             "blurPass": blur_pass,
@@ -250,8 +274,8 @@ def main() -> None:
         "passedHumanPresence": face_count >= 1 or (strong_skin_human_signal and scores["photoreal_humans"] >= 0.4),
         "passedPhotographicStyle": scores["cartoon_illustration"] < 0.24 and scores["three_d_avatar"] < 0.24,
         "passedAnatomyRisk": (
-            (face_count >= 1 and scores["low_quality_humans"] < 0.26 and hand_blur_pass)
-            or (strong_skin_human_signal and scores["low_quality_humans"] < 0.22 and hand_blur_pass)
+            (face_count >= 1 and scores["low_quality_humans"] < 0.26 and hand_blur_pass and facial_quality_pass)
+            or (strong_skin_human_signal and scores["low_quality_humans"] < 0.22 and hand_blur_pass and facial_quality_pass)
         ),
         "passedComposition": composition_pass,
         "passedNaturalHuman": not robotic_feature_risk,

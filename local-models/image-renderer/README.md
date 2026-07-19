@@ -64,5 +64,16 @@ powershell -ExecutionPolicy Bypass -File infrastructure\deployment\iis\apply-pha
 Set `CACSMS_LOCAL_IMAGE_DAEMON_URL=http://127.0.0.1:3025` on the Node service so
 CACSMS calls the warm daemon instead of spawning a cold `render.py` process per image.
 
+## SDXL upgrade (Phase 2, local, free)
+
+Download RealVisXL once, then switch both services to the SDXL checkpoint:
+
+```powershell
+cd C:\Content-Generation\cacsms-studio\local-models\image-renderer
+.\.venv\Scripts\python.exe -m pip install huggingface_hub
+.\.venv\Scripts\python.exe download_sdxl_model.py
+powershell -ExecutionPolicy Bypass -File infrastructure\deployment\iis\apply-phase2-sdxl-local-image.ps1 -SkipDownload
+```
+
 No hosted generation provider is used. If the local renderer is not configured
 or fails, CACSMS falls back to the built-in offline procedural renderer.

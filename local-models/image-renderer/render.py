@@ -226,13 +226,26 @@ def fallback_image(prompt: str, output: Path, width: int, height: int, seed: str
 
 def diffusion_dimensions(target_width: int, target_height: int) -> tuple[int, int]:
     device = os.environ.get("CACSMS_LOCAL_IMAGE_DEVICE", "cpu")
-    cpu_default = "512" if device == "cpu" else "1024"
+    family = resolve_model_family(os.environ.get("CACSMS_LOCAL_IMAGE_MODEL_ID", ""))
+    cpu_default = "768" if family == "sdxl" else "512"
     max_width = int(os.environ.get("CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_WIDTH", cpu_default))
     max_height = int(os.environ.get("CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_HEIGHT", cpu_default))
     scale = min(1.0, max_width / max(target_width, 1), max_height / max(target_height, 1))
     width = max(256, int((target_width * scale) // 8) * 8)
     height = max(256, int((target_height * scale) // 8) * 8)
     return width, height
+
+
+def resolve_model_family(model_id: str) -> str:
+    explicit = os.environ.get("CACSMS_LOCAL_IMAGE_MODEL_FAMILY", "").strip().lower()
+    if explicit in {"sdxl", "xl"}:
+        return "sdxl"
+    if explicit in {"sd15", "sd1.5", "sd1", "1.5"}:
+        return "sd15"
+    lowered = model_id.lower()
+    if any(marker in lowered for marker in ("sdxl", "realvisxl", "juggernautxl", "dreamshaperxl", "/xl/", "_xl")):
+        return "sdxl"
+    return "sd15"
 
 
 def configure_offline_mode() -> None:
@@ -252,27 +265,28 @@ def build_diffusion_prompts(prompt: str) -> tuple[str, str]:
     if len(prompt_head) > 620:
         prompt_head = prompt_head[:620].rsplit(" ", 1)[0]
     enhanced = (
-        "photorealistic documentary wide-angle group scene in a Lagos Nigeria corporate AI operations room, "
-        "three Black Nigerian West African business professionals with natural dark-brown skin tones, "
-        "clear foreground professional centered inside safe area, complete head and upper body visible, face not cropped, "
-        "visible hands with five distinct fingers, natural knuckle joints, correct hand anatomy, hands resting on laptop keyboard or tablet, "
-        "sharp facial detail with visible eyes and pupils, natural skin pores and texture, "
-        "clear unmasked natural human face, no robotic or cyborg features, no mask, no helmet, no visor, "
-        "modern business suit, blazer, shirt or smart-casual corporate workwear, no ceremonial clothing unless explicitly requested, "
-        "medium-wide 28mm documentary camera from 10 feet away, visible headroom and side margins, "
-        "moderate depth of field, readable business operations environment, not generic home office, not empty portrait background, "
-        "contemporary Lagos Nigerian corporate technology workplace when locale is Nigeria, "
-        "AI shown only as software dashboards on screens, not as facial or body features, "
+        "photorealistic documentary photograph, ultra-sharp natural human faces as the primary focal priority, "
+        "one or two Black Nigerian West African business professionals in foreground with large readable faces, "
+        "symmetrical natural face structure, detailed eyes with visible pupils and catchlights, natural skin pores and texture, "
+        "unique original synthetic identity per person, no celebrity likeness, no duplicated faces, "
+        "natural nose, lips, ears and jawline without distortion, complete head visible with headroom, "
+        "visible hands with five distinct fingers when hands appear, correct hand anatomy, "
+        "contemporary Lagos Nigerian corporate technology workplace, AI shown only as software dashboards on screens, "
+        "medium-wide 35mm documentary camera, moderate depth of field with sharp facial detail on subjects, "
         f"{' '.join(locale_bits)} {prompt_head}"
     )
     negative = (
-        "cartoon, illustration, icon, flat vector, anime, painting, sketch, fake face, distorted hands, "
+        "deformed face, disfigured face, ugly face, bad face, melted face, smudged face, blurry face, "
+        "asymmetric eyes, cross-eyed, lazy eye, mismatched eyes, distorted eyes, dead eyes, "
+        "plastic skin, waxy skin, doll face, mannequin face, fake face, ai generated face, "
+        "cartoon, illustration, icon, flat vector, anime, painting, sketch, "
         "malformed hands, fused fingers, extra fingers, missing fingers, mutated hands, bad anatomy, "
-        "extra fingers, watermark, logo, text, blurry, low quality, soft focus, plastic skin, "
-        "extreme close-up, excessive bokeh, cyborg, robot, mechanical face, cybernetic implant, sci-fi face, "
-        "face mask, masked face, helmet, visor, mannequin, traditional costume, ceremonial attire, head wrap, "
-        "white woman, caucasian woman, european woman, generic white woman portrait, generic western office portrait, "
-        "single person closeup, headshot, beauty portrait, passport photo, empty background, shallow bokeh portrait"
+        "watermark, logo, text, low quality, soft focus, "
+        "cyborg, robot, mechanical face, cybernetic implant, sci-fi face, "
+        "face mask, masked face, helmet, visor, "
+        "celebrity likeness, duplicated face, cloned face, "
+        "traditional costume, ceremonial attire, head wrap, "
+        "generic western office portrait, passport photo, beauty portrait, extreme close-up"
     )
     if "Negative prompt:" in prompt:
         supplied = prompt.split("Negative prompt:", 1)[1].strip()
@@ -294,15 +308,17 @@ def load_diffusion_pipeline(force_reload: bool = False):
         raise RuntimeError("CACSMS_LOCAL_IMAGE_MODEL_ID is not set.")
 
     import torch
-    from diffusers import AutoPipelineForText2Image, DPMSolverMultistepScheduler, StableDiffusionPipeline
+    from diffusers import AutoPipelineForText2Image, DPMSolverMultistepScheduler, StableDiffusionPipeline, StableDiffusionXLPipeline
 
     configure_offline_mode()
     device = os.environ.get("CACSMS_LOCAL_IMAGE_DEVICE", "cpu")
     local_files_only = os.environ.get("CACSMS_LOCAL_IMAGE_OFFLINE") == "1" or Path(model_id).exists()
+    family = resolve_model_family(model_id)
 
     model_path = Path(model_id)
     if model_path.is_file() and model_path.suffix.lower() in {".safetensors", ".ckpt"}:
-        pipe = StableDiffusionPipeline.from_single_file(
+        loader = StableDiffusionXLPipeline if family == "sdxl" else StableDiffusionPipeline
+        pipe = loader.from_single_file(
             str(model_path),
             torch_dtype=torch.float32,
             local_files_only=local_files_only,
@@ -320,7 +336,8 @@ def load_diffusion_pipeline(force_reload: bool = False):
                 requires_safety_checker=False,
             )
         except Exception:
-            pipe = StableDiffusionPipeline.from_pretrained(
+            fallback_loader = StableDiffusionXLPipeline if family == "sdxl" else StableDiffusionPipeline
+            pipe = fallback_loader.from_pretrained(
                 model_id,
                 torch_dtype=torch.float32,
                 local_files_only=local_files_only,
@@ -341,13 +358,55 @@ def load_diffusion_pipeline(force_reload: bool = False):
     return _pipeline
 
 
+def enhance_face_regions(image: Image.Image) -> Image.Image:
+    if os.environ.get("CACSMS_LOCAL_IMAGE_FACE_ENHANCE", "1") != "1":
+        return image
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return image
+
+    rgb = np.array(image.convert("RGB"))
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+    cascade = cv2.CascadeClassifier(str(cascade_path))
+    faces = cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(48, 48))
+    if len(faces) == 0:
+        return image
+
+    for x, y, w, h in faces[:3]:
+        pad_x = int(w * 0.14)
+        pad_y = int(h * 0.16)
+        x0 = max(0, x - pad_x)
+        y0 = max(0, y - pad_y)
+        x1 = min(bgr.shape[1], x + w + pad_x)
+        y1 = min(bgr.shape[0], y + h + pad_y)
+        roi = bgr[y0:y1, x0:x1]
+        if roi.size == 0:
+            continue
+        lab = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
+        l_channel, a_channel, b_channel = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8, 8))
+        l_channel = clahe.apply(l_channel)
+        roi = cv2.cvtColor(cv2.merge([l_channel, a_channel, b_channel]), cv2.COLOR_LAB2BGR)
+        blurred = cv2.GaussianBlur(roi, (0, 0), 1.0)
+        roi = cv2.addWeighted(roi, 1.16, blurred, -0.16, 0)
+        bgr[y0:y1, x0:x1] = roi
+
+    return Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+
+
 def run_diffusion_inference(pipe, prompt: str, output: Path, width: int, height: int, seed: str) -> None:
     import torch
 
     device = os.environ.get("CACSMS_LOCAL_IMAGE_DEVICE", "cpu")
-    default_steps = "24" if device == "cpu" else "32"
+    family = resolve_model_family(os.environ.get("CACSMS_LOCAL_IMAGE_MODEL_ID", ""))
+    default_steps = "22" if family == "sdxl" else "24" if device == "cpu" else "32"
+    default_guidance = "6.0" if family == "sdxl" else "7.0"
     steps = int(os.environ.get("CACSMS_LOCAL_IMAGE_STEPS", default_steps))
-    guidance = float(os.environ.get("CACSMS_LOCAL_IMAGE_GUIDANCE", "7.5"))
+    guidance = float(os.environ.get("CACSMS_LOCAL_IMAGE_GUIDANCE", default_guidance))
     render_width, render_height = diffusion_dimensions(width, height)
     enhanced, negative = build_diffusion_prompts(prompt)
     generator = torch.Generator(device=device).manual_seed(seed_to_int(seed))
@@ -363,8 +422,9 @@ def run_diffusion_inference(pipe, prompt: str, output: Path, width: int, height:
     image = result.images[0]
     if image.size != (width, height):
         image = image.resize((width, height), Image.Resampling.LANCZOS)
-    image = ImageEnhance.Sharpness(image).enhance(float(os.environ.get("CACSMS_LOCAL_IMAGE_SHARPNESS", "1.45")))
-    image = ImageEnhance.Contrast(image).enhance(float(os.environ.get("CACSMS_LOCAL_IMAGE_CONTRAST", "1.06")))
+    image = enhance_face_regions(image)
+    image = ImageEnhance.Sharpness(image).enhance(float(os.environ.get("CACSMS_LOCAL_IMAGE_SHARPNESS", "1.22")))
+    image = ImageEnhance.Contrast(image).enhance(float(os.environ.get("CACSMS_LOCAL_IMAGE_CONTRAST", "1.04")))
     image = image.filter(
         ImageFilter.UnsharpMask(
             radius=float(os.environ.get("CACSMS_LOCAL_IMAGE_UNSHARP_RADIUS", "1.1")),
