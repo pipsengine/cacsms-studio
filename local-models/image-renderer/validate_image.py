@@ -138,10 +138,26 @@ def main() -> None:
         cropped_risk = True
     laplacian_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     blur_score = min(1.0, laplacian_variance / 95.0)
+    if subject_box:
+        sx, sy, sw, sh = [int(value) for value in subject_box]
+        hand_top = sy + max(1, int(sh * 0.42))
+        hand_roi = gray[hand_top : min(h, sy + sh), sx : sx + sw]
+    else:
+        hand_roi = gray[int(h * 0.55) :, :]
+    hand_laplacian_variance = float(cv2.Laplacian(hand_roi, cv2.CV_64F).var()) if hand_roi.size else 0.0
+    hand_blur_score = min(1.0, hand_laplacian_variance / 85.0)
     subject_coverage_pass = 0.08 <= coverage <= 0.58
     focal_subject_pass = center_offset <= 0.58 and coverage >= 0.08
-    blur_pass = blur_score >= 0.34
-    composition_pass = subject_coverage_pass and focal_subject_pass and safe_area_pass and not cropped_risk and blur_pass
+    blur_pass = blur_score >= 0.45
+    hand_blur_pass = hand_blur_score >= 0.38
+    composition_pass = (
+        subject_coverage_pass
+        and focal_subject_pass
+        and safe_area_pass
+        and not cropped_risk
+        and blur_pass
+        and hand_blur_pass
+    )
 
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     metal_blue = cv2.inRange(hsv, np.array((85, 45, 45), dtype=np.uint8), np.array((135, 255, 255), dtype=np.uint8))
@@ -221,6 +237,9 @@ def main() -> None:
             "croppedRisk": cropped_risk,
             "laplacianVariance": laplacian_variance,
             "blurScore": blur_score,
+            "handLaplacianVariance": hand_laplacian_variance,
+            "handBlurScore": hand_blur_score,
+            "handBlurPass": hand_blur_pass,
             "subjectCoveragePass": subject_coverage_pass,
             "focalSubjectPass": focal_subject_pass,
             "blurPass": blur_pass,
@@ -229,8 +248,11 @@ def main() -> None:
         },
         "scores": scores,
         "passedHumanPresence": face_count >= 1 or (strong_skin_human_signal and scores["photoreal_humans"] >= 0.4),
-        "passedPhotographicStyle": scores["cartoon_illustration"] < 0.28 and scores["three_d_avatar"] < 0.28,
-        "passedAnatomyRisk": (face_count >= 1 and scores["low_quality_humans"] < 0.34) or strong_skin_human_signal,
+        "passedPhotographicStyle": scores["cartoon_illustration"] < 0.24 and scores["three_d_avatar"] < 0.24,
+        "passedAnatomyRisk": (
+            (face_count >= 1 and scores["low_quality_humans"] < 0.26 and hand_blur_pass)
+            or (strong_skin_human_signal and scores["low_quality_humans"] < 0.22 and hand_blur_pass)
+        ),
         "passedComposition": composition_pass,
         "passedNaturalHuman": not robotic_feature_risk,
         "passedRegionalAppearance": regional_appearance_pass,

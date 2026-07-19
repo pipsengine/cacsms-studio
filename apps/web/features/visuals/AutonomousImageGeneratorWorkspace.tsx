@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { ImageGeneratorPayload, ImageGeneratorProduction } from "@/lib/image-generator-engine";
 import { type ImageGenerationState } from "@/lib/image-generator-integrity";
+import { ensureStudioSession, ensureStudioSessionForMutation } from "@/lib/studio-session-client";
 import styles from "./AutonomousImageGeneratorWorkspace.module.css";
 
 const REFRESH_INTERVAL_MS = 10_000;
@@ -487,15 +488,38 @@ export function AutonomousImageGeneratorWorkspace({
       body: Record<string, string> = {},
       onErrorMessage = "Autonomous image generator action failed."
     ) => {
+      await ensureStudioSessionForMutation();
       const response = await fetch("/api/visuals/image-generator", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json"
         },
         body: JSON.stringify({ action, ...body })
       });
-      const payload = await readApiPayload<ImageGeneratorPayload | { message?: string }>(response);
+      let payload = await readApiPayload<ImageGeneratorPayload | { message?: string }>(response);
+      if (response.status === 401) {
+        await ensureStudioSession();
+        await ensureStudioSessionForMutation();
+        const retry = await fetch("/api/visuals/image-generator", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({ action, ...body })
+        });
+        payload = await readApiPayload<ImageGeneratorPayload | { message?: string }>(retry);
+        if (!retry.ok) {
+          throw new Error("message" in payload ? payload.message || onErrorMessage : onErrorMessage);
+        }
+        setData(payload as ImageGeneratorPayload);
+        setLastSyncAt((payload as ImageGeneratorPayload).generatedAt);
+        setError(null);
+        return;
+      }
       if (!response.ok) {
         throw new Error("message" in payload ? payload.message || onErrorMessage : onErrorMessage);
       }
@@ -521,6 +545,7 @@ export function AutonomousImageGeneratorWorkspace({
   }, [mutateImageFlow]);
 
   useEffect(() => {
+    void ensureStudioSession();
     void refreshData();
   }, [refreshData]);
 

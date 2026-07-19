@@ -14,7 +14,8 @@ import {
   type ImageGenerationState
 } from "@/lib/image-generator-integrity";
 import { generatePromptPng, readPngDimensions } from "@/lib/image-generator-png";
-import { renderWithLocalImageModel, type LocalImageModelRender } from "@/lib/local-image-model-runtime";
+import { renderWithLocalImageModel, type LocalImageModelRender, localImageRenderTimeoutMs, terminateOrphanedLocalImageRenders } from "@/lib/local-image-model-runtime";
+import { buildPhotorealStoryboardPrompt } from "@/lib/local-storyboard-frame-renderer";
 import { dispatchAssetEngineJob } from "@/lib/worker-dispatch";
 
 const VISUAL_STEPS = [
@@ -312,6 +313,27 @@ const DEFAULT_WORKER = "CACSMS Image Worker";
 const DEFAULT_PROVIDER = "cacsms-autonomous-procedural-visual-engine";
 const DEFAULT_MODEL = "CACSMS Original Human/3D Scene Renderer v2";
 const PHOTO_REAL_PROVIDER = "cacsms-local-neural-image-runtime";
+
+function configuredNeuralImageModel() {
+  return process.env.CACSMS_LOCAL_IMAGE_MODEL_NAME?.trim() || "CACSMS Local Photoreal Human Model";
+}
+
+function defaultJobRuntime() {
+  const hasDiffusion = Boolean(process.env.CACSMS_LOCAL_IMAGE_MODEL_ID?.trim());
+  return {
+    worker: DEFAULT_WORKER,
+    provider: hasDiffusion ? PHOTO_REAL_PROVIDER : DEFAULT_PROVIDER,
+    model: hasDiffusion ? configuredNeuralImageModel() : DEFAULT_MODEL
+  };
+}
+
+function generationStaleMs(updatedAt: Date | string) {
+  return Date.now() - new Date(updatedAt).getTime();
+}
+
+function generationStillRunning(updatedAt: Date | string) {
+  return generationStaleMs(updatedAt) < localImageRenderTimeoutMs() + 120_000;
+}
 const PHOTOREAL_HUMAN_NEGATIVE_PROMPT = [
   "cartoon",
   "illustration",
@@ -378,11 +400,120 @@ async function renderIndependentVisual(prompt: string, width: number, height: nu
   if (local) return local;
   return allowFallback ? renderProceduralFallback(prompt, width, height) : null;
 }
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
+const MIN_QUALITY_SCORE = 85;
 const TARGET_VARIANT_COUNT = Math.max(
   1,
   Number.parseInt(process.env.CACSMS_IMAGE_GENERATION_VARIANT_COUNT ?? "3", 10) || 3
 );
+const MAX_VARIANT_CAP = Math.max(
+  TARGET_VARIANT_COUNT,
+  Number.parseInt(process.env.CACSMS_IMAGE_GENERATION_MAX_VARIANTS ?? "12", 10) || 12
+);
+
+type StoryboardSnapshot = {
+  scenes: Array<{
+    id: string;
+    title: string;
+    shots: Array<{
+      id: string;
+      title: string;
+      framing: string;
+      camera: string;
+      visualFocus: string;
+      summary: string;
+      previewAssetId?: string | null;
+    }>;
+  }>;
+};
+
+function storyboardSnapshotFromMetadata(metadata: Record<string, unknown>) {
+  const snapshot = asObject(metadata.autonomousStoryboard);
+  if (!snapshot.generatedAt || !Array.isArray(snapshot.scenes)) return null;
+  return snapshot as unknown as StoryboardSnapshot;
+}
+
+function storyboardShotCount(metadata: Record<string, unknown>) {
+  const snapshot = storyboardSnapshotFromMetadata(metadata);
+  if (!snapshot) return TARGET_VARIANT_COUNT;
+  return snapshot.scenes.reduce((total, scene) => total + scene.shots.length, 0);
+}
+
+function targetVisualAssetCount(metadata: Record<string, unknown>) {
+  return Math.max(TARGET_VARIANT_COUNT, Math.min(storyboardShotCount(metadata), MAX_VARIANT_CAP));
+}
+
+async function advanceVisualBriefToNextStoryboardShot(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  metadata: Record<string, unknown>
+) {
+  const snapshot = storyboardSnapshotFromMetadata(metadata);
+  if (!snapshot) return metadata;
+
+  const usedAssetIds = new Set<string>();
+  for (const scene of snapshot.scenes) {
+    for (const shot of scene.shots) {
+      if (shot.previewAssetId) usedAssetIds.add(shot.previewAssetId);
+    }
+  }
+
+  let next: { scene: StoryboardSnapshot["scenes"][number]; shot: StoryboardSnapshot["scenes"][number]["shots"][number] } | null = null;
+  for (const scene of snapshot.scenes) {
+    for (const shot of scene.shots) {
+      if (!shot.previewAssetId) {
+        next = { scene, shot };
+        break;
+      }
+    }
+    if (next) break;
+  }
+  if (!next) return metadata;
+
+  const prompt = buildPhotorealStoryboardPrompt({
+    productionTitle: row.Title,
+    sceneTitle: next.scene.title,
+    shotTitle: next.shot.title,
+    framing: next.shot.framing,
+    camera: next.shot.camera,
+    visualFocus: next.shot.visualFocus,
+    summary: next.shot.summary
+  });
+  const existingBrief = asObject(asObject(metadata.visualGeneration).brief);
+  const merged = {
+    ...metadata,
+    visualGeneration: {
+      ...asObject(metadata.visualGeneration),
+      brief: {
+        purpose: asString(existingBrief.purpose, `Create photoreal human visual assets for ${row.Title}.`),
+        scene: next.scene.title,
+        subject: next.shot.visualFocus,
+        composition: next.shot.framing,
+        style: "Photorealistic, cinematic, realistic human subjects, corporate documentary still.",
+        aspectRatio: asString(existingBrief.aspectRatio, "16:9 (1280x720)"),
+        brandProfile: asString(existingBrief.brandProfile, "CACSMS Corporate 2026"),
+        prompt,
+        required: ["Primary subject", "Brand-safe palette", "Storyboard-aligned framing"],
+        prohibited: ["Fantasy", "Cartoon style", "Unapproved logos"],
+        typography: asString(existingBrief.typography, "No text except approved interface labels"),
+        safeArea: asString(existingBrief.safeArea, "10% all sides"),
+        originality: "Must be original and unique to this storyboard package",
+        references: [`SB-${row.Code}`, next.scene.id, next.shot.id]
+      }
+    }
+  };
+
+  await pool
+    .request()
+    .input("productionId", sql.NVarChar(36), row.ProductionId)
+    .input("metadataJson", sql.NVarChar(sql.MAX), JSON.stringify(merged))
+    .query(`
+      UPDATE cacsms.Productions
+      SET MetadataJson = @metadataJson, UpdatedAt = SYSUTCDATETIME()
+      WHERE CONVERT(nvarchar(36), ProductionId) = @productionId;
+    `);
+  return merged;
+}
 
 type VisualBrief = ReturnType<typeof briefFromRow>;
 
@@ -524,6 +655,10 @@ function summarizeModelResponse(raw: string | null) {
   const model = typeof parsed.model === "string" ? parsed.model : null;
   const workflow = typeof parsed.workflow === "string" ? parsed.workflow : null;
   const method = typeof parsed.method === "string" ? parsed.method : null;
+  const failureReason = typeof parsed.failureReason === "string" ? parsed.failureReason : null;
+  if (failureReason?.trim()) {
+    return failureReason.length > 180 ? `${failureReason.slice(0, 177)}…` : failureReason;
+  }
   const summaryParts = [provider ?? workflow, model, method].filter(Boolean);
   if (summaryParts.length > 0) {
     return summaryParts.join(" · ");
@@ -666,6 +801,8 @@ function buildRevisionPrompt(brief: VisualBrief, row: ProductionRow, variantNumb
   return [
     base,
     "Mandatory retry correction: use a wider camera distance, leave clear headroom and side margins, keep every face fully visible, keep the operations-room background sharp enough to read, and show the Lagos/Nigerian corporate context clearly.",
+    "Hands must show five distinct fingers with natural knuckle joints, no fused or melted fingers, no extra digits, and natural contact with laptop, tablet, or desk surface.",
+    "Faces must have sharp eyes with visible pupils, natural skin texture, and no plastic or smudged facial detail.",
     "Do not create a single-person office portrait. Do not create a white European corporate portrait. Do not create a generic home office or empty office background.",
     `Rejected defects to correct in plain terms: ${defects.slice(0, 600)}`
   ].join(" ");
@@ -675,7 +812,7 @@ function buildRenderInstructions(brief: VisualBrief, row: ProductionRow, width: 
   const mode = deriveRenderMode(brief);
   const prompt = mode.mode === "photoreal-human"
     ? buildPhotorealPrompt(brief, row, variantNumber, retryCount)
-    : brief.prompt;
+    : sanitizePhotorealBriefPrompt(brief.prompt);
   return {
     mode,
     prompt,
@@ -879,6 +1016,24 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   const subjectCoverage = asFraction(compositionEvidence.subjectCoverage, 0);
   const centerOffset = asFraction(compositionEvidence.centerOffset, 1);
   const blurScore = asFraction(compositionEvidence.blurScore, 0);
+  const handBlurScore = asFraction(compositionEvidence.handBlurScore, 0);
+  const laplacianVariance = asNumber(compositionEvidence.laplacianVariance, 0);
+  const handLaplacianVariance = asNumber(compositionEvidence.handLaplacianVariance, 0);
+  const lowQualityHumansScore = asFraction(semanticEvidence.scores.low_quality_humans, 1);
+  const sharpnessFromValidator =
+    semanticEvidence.available && blurScore > 0
+      ? Math.round(Math.min(100, blurScore * 100))
+      : hasRealSize && hasEnoughBytes
+        ? 74
+        : hasRealSize
+          ? 58
+          : 45;
+  const anatomyFromValidator =
+    semanticEvidence.available
+      ? Math.round(Math.max(0, Math.min(100, (1 - lowQualityHumansScore) * 100)))
+      : productionPhotoreal && hasVisibleHumanEvidence
+        ? 62
+        : 38;
   const safeAreaPass = compositionEvidence.safeAreaPass === true;
   const croppedRisk = compositionEvidence.croppedRisk === true;
   const roboticFeatureRisk = compositionEvidence.roboticFeatureRisk === true || !semanticEvidence.passedNaturalHuman;
@@ -895,12 +1050,12 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
     !/(safari|desert|tribal|hut|poverty|slum|traditional costume by default)/i.test(instructions.prompt);
   const quality: VisualQuality = {
     brief: 94,
-    humanPhotorealism: productionPhotoreal && hasVisibleHumanEvidence ? 93 : productionPhotoreal ? 62 : 18,
-    facialRealism: productionPhotoreal && hasVisibleHumanEvidence && semanticEvidence.passedPhotographicStyle ? 92 : productionPhotoreal ? 58 : 24,
-    anatomy: productionPhotoreal && hasVisibleHumanEvidence && semanticEvidence.passedAnatomyRisk ? 91 : productionPhotoreal ? 60 : 38,
+    humanPhotorealism: productionPhotoreal && hasVisibleHumanEvidence && lowQualityHumansScore < 0.26 ? 93 : productionPhotoreal ? 62 : 18,
+    facialRealism: productionPhotoreal && hasVisibleHumanEvidence && semanticEvidence.passedPhotographicStyle && lowQualityHumansScore < 0.24 ? 92 : productionPhotoreal ? 58 : 24,
+    anatomy: productionPhotoreal && semanticEvidence.passedAnatomyRisk ? anatomyFromValidator : productionPhotoreal ? 58 : 38,
     subjectDiversity: productionPhotoreal && hasVisibleHumanEvidence ? 90 : productionPhotoreal ? 52 : 72,
     lightingPerspective: productionPhotoreal ? 91 : 76,
-    sharpnessResolution: hasRealSize && hasEnoughBytes ? 91 : hasRealSize ? 74 : 45,
+    sharpnessResolution: sharpnessFromValidator,
     subjectVisibility: semanticEvidence.passedComposition && subjectCoverage >= 0.08 && !croppedRisk ? 91 : subjectCoverage > 0 ? 48 : 20,
     identityConsistency: semanticEvidence.passedComposition && !roboticFeatureRisk ? 88 : 52,
     geographicAccuracy: hasLocalePrompt && nigeriaPromptOk ? 90 : 55,
@@ -946,6 +1101,21 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   }
   if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !semanticEvidence.passedAnatomyRisk) {
     defects.unshift("Anatomy risk failed: local semantic validator found low-quality or malformed-human risk too high.");
+  }
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && blurScore < 0.45) {
+    defects.unshift(
+      `Sharpness failed: blur score ${blurScore.toFixed(2)} (Laplacian variance ${laplacianVariance.toFixed(1)}) is below production threshold. Regenerate at higher native diffusion resolution with more inference steps.`
+    );
+  }
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && handBlurScore > 0 && handBlurScore < 0.38) {
+    defects.unshift(
+      `Hand detail failed: hand-region blur score ${handBlurScore.toFixed(2)} (Laplacian ${handLaplacianVariance.toFixed(1)}) indicates malformed, fused, or soft hands.`
+    );
+  }
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && lowQualityHumansScore >= 0.26) {
+    defects.unshift(
+      `Anatomy realism failed: semantic validator scored low-quality human risk at ${(lowQualityHumansScore * 100).toFixed(1)}%.`
+    );
   }
   if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !semanticEvidence.passedComposition) {
     defects.unshift(
@@ -1215,15 +1385,127 @@ async function updateProductionState(
 }
 
 async function createJob(pool: sql.ConnectionPool, productionId: string, state: ImageGenerationState) {
-  const result = await pool.request().input("productionId", sql.NVarChar(36), productionId).input("state", sql.NVarChar(30), state)
+  const runtime = defaultJobRuntime();
+  const result = await pool
+    .request()
+    .input("productionId", sql.NVarChar(36), productionId)
+    .input("state", sql.NVarChar(30), state)
+    .input("worker", sql.NVarChar(200), runtime.worker)
+    .input("provider", sql.NVarChar(120), runtime.provider)
+    .input("model", sql.NVarChar(200), runtime.model)
     .query<{ id: string }>(`
       DECLARE @created TABLE (id nvarchar(36));
       INSERT cacsms.ImageGenerationJobs (ProductionId, State, WorkerName, ProviderName, ModelName, RetryCount, NextRecoveryAction, LastTransitionAt)
       OUTPUT CONVERT(nvarchar(36), inserted.ImageGenerationJobId) INTO @created(id)
-      VALUES (CONVERT(uniqueidentifier, @productionId), @state, N'${DEFAULT_WORKER}', N'${DEFAULT_PROVIDER}', N'${DEFAULT_MODEL}', 0, N'Await scheduler dispatch.', SYSUTCDATETIME());
+      VALUES (CONVERT(uniqueidentifier, @productionId), @state, @worker, @provider, @model, 0, N'Await scheduler dispatch.', SYSUTCDATETIME());
       SELECT TOP(1) id FROM @created;
     `);
   return result.recordset[0].id;
+}
+
+function sanitizePhotorealBriefPrompt(prompt: string) {
+  return prompt
+    .replace(/\boriginal 3d scene\b/gi, "photorealistic documentary scene")
+    .replace(/\b3d avatar\b/gi, "photorealistic human subject")
+    .replace(/\bstoryboard frame\b/gi, "production still frame")
+    .replace(/\billustrative\b/gi, "photographic")
+    .trim();
+}
+
+async function requeueVariantForRetry(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  job: JobRow,
+  brief: VisualBrief,
+  variants: (VariantRow & Partial<AssetRow>)[],
+  failedVariant: VariantRow & Partial<AssetRow>,
+  retryCount: number,
+  defectSummary: string
+) {
+  const revisedPrompt = buildRevisionPrompt(brief, row, failedVariant.VariantNumber, retryCount, defectSummary);
+  const openQueued = variants.find((variant) => variant.State === "Queued" && variant.ImageGenerationVariantId !== failedVariant.ImageGenerationVariantId);
+  if (openQueued) {
+    await updateVariantPrompt(pool, openQueued.ImageGenerationVariantId, revisedPrompt);
+    await patchVariant(pool, openQueued.ImageGenerationVariantId, {
+      state: "Queued",
+      retryCount,
+      failureReason: null,
+      storageResult: "Revision prompt refreshed for queued variant slot."
+    });
+    return openQueued;
+  }
+
+  await updateVariantPrompt(pool, failedVariant.ImageGenerationVariantId, revisedPrompt);
+  await patchVariant(pool, failedVariant.ImageGenerationVariantId, {
+    state: "Queued",
+    retryCount,
+    failureReason: null,
+    storageResult: "Revision queued on existing variant slot."
+  });
+  return { ...failedVariant, State: "Queued" as ImageGenerationState, RenderPrompt: revisedPrompt };
+}
+
+async function recoverStuckGenerationJob(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  job: JobRow,
+  variants: (VariantRow & Partial<AssetRow>)[]
+) {
+  const generatingVariants = variants.filter((variant) => variant.State === "Generating");
+  const jobGenerating = job.State === "Generating";
+  if (!jobGenerating && generatingVariants.length === 0) return job;
+  if (jobGenerating && generationStillRunning(job.UpdatedAt)) return job;
+  if (generatingVariants.some((variant) => generationStillRunning(variant.UpdatedAt))) return job;
+
+  terminateOrphanedLocalImageRenders();
+
+  for (const variant of generatingVariants) {
+    await patchVariant(pool, variant.ImageGenerationVariantId, {
+      state: "Queued",
+      retryCount: variant.RetryCount,
+      failureReason: null,
+      storageResult: "Recovered from stale generating state; neural render will retry."
+    });
+  }
+
+  const activeVariant = selectActiveVariant(job, variants);
+  if (activeVariant && activeVariant.State === "Generating") {
+    await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
+      state: "Queued",
+      retryCount: activeVariant.RetryCount,
+      failureReason: null,
+      storageResult: "Recovered from stale generating state; neural render will retry."
+    });
+  }
+
+  if (!jobGenerating) return job;
+
+  await patchJob(pool, job.ImageGenerationJobId, {
+    state: "Queued",
+    retryCount: job.RetryCount,
+    failureReason: null,
+    nextRecoveryAction: "Retry neural render after recovering from a stale generating state.",
+    storageResult: "Autonomous recovery reset a stuck generating job.",
+    modelResponse: JSON.stringify({
+      provider: PHOTO_REAL_PROVIDER,
+      model: configuredNeuralImageModel(),
+      workflow: "photoreal-human",
+      method: "stale generating recovery"
+    })
+  });
+  return { ...job, State: "Queued" as ImageGenerationState };
+}
+
+async function updateVariantPrompt(pool: sql.ConnectionPool, variantId: string, prompt: string) {
+  await pool
+    .request()
+    .input("variantId", sql.NVarChar(36), variantId)
+    .input("prompt", sql.NVarChar(sql.MAX), prompt)
+    .query(`
+      UPDATE cacsms.ImageGenerationVariants
+      SET RenderPrompt=@prompt, UpdatedAt=SYSUTCDATETIME()
+      WHERE CONVERT(nvarchar(36), ImageGenerationVariantId)=@variantId;
+    `);
 }
 
 async function createVariant(
@@ -1569,15 +1851,23 @@ function approvedVariantCount(variants: (VariantRow & Partial<AssetRow>)[]) {
   return variants.filter((variant) => variant.State === "Completed").length;
 }
 
-function jobNeedsAutonomousWork(job: JobRow | null, variants: (VariantRow & Partial<AssetRow>)[]) {
+function jobNeedsAutonomousWork(
+  job: JobRow | null,
+  variants: (VariantRow & Partial<AssetRow>)[],
+  metadata: Record<string, unknown>
+) {
+  const target = targetVisualAssetCount(metadata);
   if (!job) return true;
   if (["Queued", "Generating", "Uploading", "Persisting", "Validating", "Reviewing", "Revising"].includes(job.State)) {
     return true;
   }
+  if (job.State === "Rejected" && approvedVariantCount(variants) < target) {
+    return true;
+  }
   if (job.State !== "Completed") return false;
   return (
-    variants.length < TARGET_VARIANT_COUNT ||
-    approvedVariantCount(variants) < TARGET_VARIANT_COUNT ||
+    variants.length < target ||
+    approvedVariantCount(variants) < target ||
     pendingGenerationVariants(variants).length > 0
   );
 }
@@ -1586,13 +1876,15 @@ async function ensureTargetVariants(
   pool: sql.ConnectionPool,
   row: ProductionRow,
   job: JobRow,
-  brief: VisualBrief
+  brief: VisualBrief,
+  metadata: Record<string, unknown>
 ) {
   const variants = await productionVariants(pool, row.ProductionId);
-  if (variants.length >= TARGET_VARIANT_COUNT) return variants;
+  const target = targetVisualAssetCount(metadata);
+  if (variants.length >= target) return variants;
 
   const { width, height } = dimensionsFromAspectRatio(brief.aspectRatio);
-  for (let variantNumber = variants.length + 1; variantNumber <= TARGET_VARIANT_COUNT; variantNumber += 1) {
+  for (let variantNumber = variants.length + 1; variantNumber <= target; variantNumber += 1) {
     const instructions = buildRenderInstructions(
       brief,
       row,
@@ -1616,6 +1908,80 @@ async function ensureTargetVariants(
   return productionVariants(pool, row.ProductionId);
 }
 
+async function revalidateCompletedVariants(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  job: JobRow,
+  brief: VisualBrief,
+  metadata: Record<string, unknown>,
+  variants: (VariantRow & Partial<AssetRow>)[]
+) {
+  let changed = false;
+  let nextJob = job;
+  let nextVariants = variants;
+  for (const variant of variants.filter((item) => item.State === "Completed" && item.ImageGenerationAssetId)) {
+    const asset = await imageAsset(pool, variant.ImageGenerationAssetId!);
+    if (!asset) continue;
+    const dimensions = dimensionsFromAspectRatio(brief.aspectRatio);
+    const instructions = buildRenderInstructions(
+      brief,
+      row,
+      dimensions.width,
+      dimensions.height,
+      job.ProviderJobId || variant.ImageGenerationVariantId,
+      variant.VariantNumber,
+      variant.RetryCount ?? job.RetryCount
+    );
+    instructions.prompt = variant.RenderPrompt || instructions.prompt;
+    const gate = evaluatePhotorealHumanGates(asset, variant, instructions);
+    if (gate.passed) continue;
+
+    const defectSummary = gate.defects.join(" ");
+    await patchVariant(pool, variant.ImageGenerationVariantId, {
+      state: "Rejected",
+      retryCount: (variant.RetryCount ?? job.RetryCount) + 1,
+      assetId: variant.ImageGenerationAssetId,
+      failureReason: `Rejected on re-validation - ${defectSummary}`,
+      storageResult: `Previously approved asset ${variant.ImageGenerationAssetId} failed stricter production quality gates.`,
+      qualityScore: gate.score,
+      qualitySummary: JSON.stringify({ quality: gate.quality, passed: false, defects: gate.defects, audit: gate.audit })
+    });
+    await requeueVariantForRetry(
+      pool,
+      row,
+      job,
+      brief,
+      nextVariants,
+      variant,
+      (variant.RetryCount ?? job.RetryCount) + 1,
+      defectSummary
+    );
+    changed = true;
+  }
+
+  if (!changed) {
+    return { job: nextJob, variants: nextVariants };
+  }
+
+  nextVariants = await productionVariants(pool, row.ProductionId);
+  await patchJob(pool, job.ImageGenerationJobId, {
+    state: "Queued",
+    retryCount: job.RetryCount,
+    failureReason: "Previously approved variants failed stricter sharpness and anatomy gates.",
+    nextRecoveryAction: "Regenerating replacement variants with revised photoreal instructions.",
+    storageResult: "Autonomous re-validation queued fresh neural-render variants.",
+    modelResponse: JSON.stringify({
+      provider: PHOTO_REAL_PROVIDER,
+      model: process.env.CACSMS_LOCAL_IMAGE_MODEL_NAME || "CACSMS Local Neural Image Model",
+      workflow: "photoreal-human",
+      method: "quality re-validation"
+    })
+  });
+  await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Queued"));
+  nextJob = { ...job, State: "Queued" as ImageGenerationState };
+  return { job: nextJob, variants: nextVariants };
+}
+
 async function maybeResumeVariantGeneration(
   pool: sql.ConnectionPool,
   row: ProductionRow,
@@ -1625,12 +1991,13 @@ async function maybeResumeVariantGeneration(
   variants: (VariantRow & Partial<AssetRow>)[]
 ) {
   let nextVariants = variants;
-  if (variants.length < TARGET_VARIANT_COUNT) {
-    nextVariants = await ensureTargetVariants(pool, row, job, brief);
+  if (variants.length < targetVisualAssetCount(metadata)) {
+    nextVariants = await ensureTargetVariants(pool, row, job, brief, metadata);
   }
   const pending = pendingGenerationVariants(nextVariants);
   const approved = approvedVariantCount(nextVariants);
-  const needsWork = pending.length > 0 || approved < TARGET_VARIANT_COUNT;
+  const target = targetVisualAssetCount(metadata);
+  const needsWork = pending.length > 0 || approved < target;
   if (!needsWork) {
     return { job, variants: nextVariants };
   }
@@ -1639,8 +2006,8 @@ async function maybeResumeVariantGeneration(
     await patchJob(pool, job.ImageGenerationJobId, {
       state: "Queued",
       retryCount: job.RetryCount,
-      nextRecoveryAction: `Autonomously resuming variant generation (${approved}/${TARGET_VARIANT_COUNT} approved).`,
-      storageResult: `Autonomous backfill queued ${Math.max(pending.length, TARGET_VARIANT_COUNT - approved)} remaining variant(s) for ${row.Code}.`
+      nextRecoveryAction: `Autonomously resuming variant generation (${approved}/${target} approved).`,
+      storageResult: `Autonomous backfill queued ${Math.max(pending.length, target - approved)} remaining variant(s) for ${row.Code}.`
     });
     const preVisualStages = new Set(["research", "scripting", "storyboard"]);
     if (!preVisualStages.has(row.Stage)) {
@@ -1759,7 +2126,12 @@ function mapProductionRecord(row: ProductionRow, brief: ReturnType<typeof briefF
     decisions: decisionsFor(job, variants),
     agent: {
       name: job?.WorkerName || DEFAULT_WORKER,
-      model: job?.ModelName || DEFAULT_MODEL,
+      model:
+        job?.ModelName ||
+        (typeof parseJsonObject(job?.ModelResponseJson ?? null).model === "string"
+          ? String(parseJsonObject(job?.ModelResponseJson ?? null).model)
+          : null) ||
+        (process.env.CACSMS_LOCAL_IMAGE_MODEL_ID ? configuredNeuralImageModel() : DEFAULT_MODEL),
       action: state,
       elapsedSeconds: Math.max(
         0,
@@ -1854,7 +2226,8 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   for (const candidate of candidates) {
     const job = await latestJob(pool, candidate.ProductionId);
     const variants = await productionVariants(pool, candidate.ProductionId);
-    if (jobNeedsAutonomousWork(job, variants)) {
+    const candidateMetadata = parseMetadata(candidate.MetadataJson);
+    if (jobNeedsAutonomousWork(job, variants, candidateMetadata)) {
       activeCandidates.push({ row: candidate, job, variants });
     }
   }
@@ -1905,11 +2278,34 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     return getImageGeneratorData();
   }
 
+  if (job.State === "Rejected" && approvedVariantCount(variants) < targetVisualAssetCount(metadata)) {
+    const target = targetVisualAssetCount(metadata);
+    await patchJob(pool, job.ImageGenerationJobId, {
+      state: "Queued",
+      retryCount: job.RetryCount,
+      failureReason: null,
+      nextRecoveryAction: `Resuming neural render generation (${approvedVariantCount(variants)}/${target} approved).`,
+      storageResult: "Rejected job reopened because approved variant count is below target.",
+      modelResponse: JSON.stringify({
+        provider: PHOTO_REAL_PROVIDER,
+        model: process.env.CACSMS_LOCAL_IMAGE_MODEL_NAME || "CACSMS Local Neural Image Model",
+        workflow: "photoreal-human",
+        method: "resume after rejection"
+      })
+    });
+    await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Queued"));
+    job = { ...job, State: "Queued" as ImageGenerationState };
+  }
+
   if (["Queued", "Generating", "Uploading", "Persisting", "Revising", "Reviewing"].includes(job.State)) {
-    variants = await ensureTargetVariants(pool, row, job, brief);
+    variants = await ensureTargetVariants(pool, row, job, brief, metadata);
   }
 
   if (job) {
+    job = await recoverStuckGenerationJob(pool, row, job, variants);
+    const revalidated = await revalidateCompletedVariants(pool, row, job, brief, metadata, variants);
+    job = revalidated.job;
+    variants = revalidated.variants;
     const resumed = await maybeResumeVariantGeneration(pool, row, job, brief, metadata, variants);
     job = resumed.job;
     variants = resumed.variants;
@@ -1999,6 +2395,10 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     );
     reviewInstructions.prompt = activeVariant.RenderPrompt;
     const gate = evaluatePhotorealHumanGates(asset, activeVariant, reviewInstructions);
+    if (gate.passed && gate.score < MIN_QUALITY_SCORE) {
+      gate.passed = false;
+      gate.defects.unshift(`Overall quality score ${gate.score}% is below the ${MIN_QUALITY_SCORE}% production threshold.`);
+    }
     if (gate.passed) {
       const integrityErrors = getCompletedVariantIntegrityErrors({
         state: "Completed",
@@ -2030,19 +2430,22 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       });
       const refreshedVariants = await productionVariants(pool, row.ProductionId);
       const pending = pendingGenerationVariants(refreshedVariants);
+      const approvedCount = approvedVariantCount(refreshedVariants);
+      const target = targetVisualAssetCount(metadata);
       const reviewSummary = JSON.stringify({
         ...parseJsonObject(job.ModelResponseJson),
         review: { quality: gate.quality, score: gate.score, passed: true, defects: [], audit: gate.audit }
       });
-      if (pending.length > 0) {
+      if (approvedCount < target || pending.length > 0) {
+        const nextMetadata = await advanceVisualBriefToNextStoryboardShot(pool, row, metadata);
         await patchJob(pool, job.ImageGenerationJobId, {
           state: "Queued",
           retryCount: job.RetryCount,
-          nextRecoveryAction: `Approved variant ${activeVariant.VariantNumber}. Generating ${pending.length} remaining variant(s).`,
-          storageResult: `Approved asset ${asset.ImageGenerationAssetId}; ${pending.length} variant(s) still queued.`,
+          nextRecoveryAction: `Approved variant ${activeVariant.VariantNumber}. Generating ${Math.max(pending.length, target - approvedCount)} remaining high-quality variant(s).`,
+          storageResult: `Approved asset ${asset.ImageGenerationAssetId}; ${approvedCount}/${target} production-grade variants ready.`,
           modelResponse: reviewSummary
         });
-        await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Queued"));
+        await updateProductionState(pool, row, nextMetadata, "visual-generation", "active", stateToProgress("Queued"));
         return getImageGeneratorData();
       }
       await patchJob(pool, job.ImageGenerationJobId, {
@@ -2088,13 +2491,16 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       storageResult: `Rejected asset ${asset.ImageGenerationAssetId}; revision requested.`,
       modelResponse: JSON.stringify({ ...parseJsonObject(job.ModelResponseJson), review: { quality: gate.quality, score: gate.score, passed: false, defects: gate.defects, audit: gate.audit } })
     });
-    const revisedPrompt = buildRevisionPrompt(brief, row, Math.max(...variants.map((item) => item.VariantNumber)) + 1, nextRetry, defectSummary);
-    await createVariant(pool, row.ProductionId, job.ImageGenerationJobId, Math.max(...variants.map((item) => item.VariantNumber)) + 1, revisedPrompt, "Queued", nextRetry);
+    await requeueVariantForRetry(pool, row, job, brief, variants, activeVariant, nextRetry, defectSummary);
     await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Revising"));
     return getImageGeneratorData();
   }
 
   if (!["Queued", "Generating", "Uploading", "Persisting", "Revising"].includes(job.State)) {
+    return getImageGeneratorData();
+  }
+
+  if (job.State === "Generating" && generationStillRunning(job.UpdatedAt)) {
     return getImageGeneratorData();
   }
 
@@ -2115,6 +2521,19 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     `retry:${job.RetryCount}`,
     `variant:${activeVariant.VariantNumber}`
   ].join("\n");
+  const generationProvider = instructions.mode.mode === "photoreal-human" ? PHOTO_REAL_PROVIDER : DEFAULT_PROVIDER;
+  const generationModel =
+    instructions.mode.mode === "photoreal-human" ? configuredNeuralImageModel() : DEFAULT_MODEL;
+  await pool
+    .request()
+    .input("jobId", sql.NVarChar(36), job.ImageGenerationJobId)
+    .input("provider", sql.NVarChar(120), generationProvider)
+    .input("model", sql.NVarChar(200), generationModel)
+    .query(`
+      UPDATE cacsms.ImageGenerationJobs
+      SET ProviderName=@provider, ModelName=@model, UpdatedAt=SYSUTCDATETIME()
+      WHERE CONVERT(nvarchar(36), ImageGenerationJobId)=@jobId;
+    `);
   await patchJob(pool, job.ImageGenerationJobId, {
     state: "Generating",
     retryCount: job.RetryCount,
@@ -2124,22 +2543,22 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       ? "The worker is generating a photorealistic-human candidate for mandatory semantic validation."
       : "The worker is generating an original non-photoreal scene candidate.",
     modelResponse: JSON.stringify({
-      provider: DEFAULT_PROVIDER,
-      model: DEFAULT_MODEL,
+      provider: generationProvider,
+      model: generationModel,
       providerJobId,
       assignedAt: new Date().toISOString(),
       workflow: instructions.mode.mode,
       prompt: instructions.prompt,
       negativePrompt: instructions.negativePrompt,
       settings: instructions.settings,
-      method: "candidate generation pending"
+      method: "local diffusion render in progress"
     })
   });
   await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
     state: "Generating",
     retryCount: job.RetryCount,
     providerResponse: JSON.stringify({
-      provider: DEFAULT_PROVIDER,
+      provider: generationProvider,
       providerJobId,
       status: "started",
       workflow: instructions.mode.mode,
@@ -2153,14 +2572,14 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   if (!rendered) {
     const nextRetry = job.RetryCount + 1;
     const defectSummary =
-      "Local photorealistic-human renderer did not return a production image. Browser-rendered, procedural, vector, cartoon, or 3D fallback output is prohibited for this brief.";
+      "Local diffusion renderer timed out or failed before returning image bytes. Procedural fallback is disabled for photoreal-human briefs.";
     await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
       state: "Rejected",
       retryCount: nextRetry,
-      failureReason: `Rejected - Human realism failed. ${defectSummary}`,
+      failureReason: `Rejected - Render failed. ${defectSummary}`,
       storageResult: "No production asset was persisted because the local neural renderer failed before quality validation.",
       providerResponse: JSON.stringify({
-        provider: DEFAULT_PROVIDER,
+        provider: PHOTO_REAL_PROVIDER,
         providerJobId,
         status: "rejected",
         workflow: instructions.mode.mode,
@@ -2175,25 +2594,23 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
         state: "Rejected",
         retryCount: nextRetry,
         providerJobId,
-        failureReason: `Rejected - Human realism failed after ${nextRetry} attempts. ${defectSummary}`,
+        failureReason: `Render failed after ${nextRetry} attempts. ${defectSummary}`,
         nextRecoveryAction: "Configure a stronger local photorealistic human model or reduce local render settings, then regenerate.",
         storageResult: "Generation stopped without persisting a fallback image.",
-        modelResponse: JSON.stringify({ provider: DEFAULT_PROVIDER, providerJobId, workflow: instructions.mode.mode, defects: [defectSummary] })
+        modelResponse: JSON.stringify({ provider: PHOTO_REAL_PROVIDER, providerJobId, workflow: instructions.mode.mode, defects: [defectSummary] })
       });
       await updateProductionState(pool, row, metadata, "visual-generation", "blocked", stateToProgress("Rejected"));
       return getImageGeneratorData();
     }
-    const nextVariantNumber = Math.max(...variants.map((item) => item.VariantNumber), activeVariant.VariantNumber) + 1;
-    const revisedPrompt = buildRevisionPrompt(brief, row, nextVariantNumber, nextRetry, defectSummary);
-    await createVariant(pool, row.ProductionId, job.ImageGenerationJobId, nextVariantNumber, revisedPrompt, "Queued", nextRetry);
+    await requeueVariantForRetry(pool, row, job, brief, variants, activeVariant, nextRetry, defectSummary);
     await patchJob(pool, job.ImageGenerationJobId, {
       state: "Revising",
       retryCount: nextRetry,
       providerJobId,
-      failureReason: `Rejected - Human realism failed. ${defectSummary}`,
+      failureReason: `Render failed. ${defectSummary}`,
       nextRecoveryAction: "Revising visual instructions, regenerating with the local neural renderer, validating humans, checking anatomy, checking originality, then re-running quality approval.",
-      storageResult: "Fallback output was blocked and a new neural-render variant was queued.",
-      modelResponse: JSON.stringify({ provider: DEFAULT_PROVIDER, providerJobId, workflow: instructions.mode.mode, defects: [defectSummary] })
+      storageResult: "Neural render failed; existing variant slot re-queued with revised instructions.",
+      modelResponse: JSON.stringify({ provider: PHOTO_REAL_PROVIDER, providerJobId, workflow: instructions.mode.mode, defects: [defectSummary] })
     });
     await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Revising"));
     return getImageGeneratorData();

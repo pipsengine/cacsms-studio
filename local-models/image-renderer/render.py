@@ -224,7 +224,71 @@ def fallback_image(prompt: str, output: Path, width: int, height: int, seed: str
     image.save(output)
 
 
-def render_diffusion(prompt: str, output: Path, width: int, height: int, seed: str) -> None:
+def diffusion_dimensions(target_width: int, target_height: int) -> tuple[int, int]:
+    device = os.environ.get("CACSMS_LOCAL_IMAGE_DEVICE", "cpu")
+    cpu_default = "512" if device == "cpu" else "1024"
+    max_width = int(os.environ.get("CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_WIDTH", cpu_default))
+    max_height = int(os.environ.get("CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_HEIGHT", cpu_default))
+    scale = min(1.0, max_width / max(target_width, 1), max_height / max(target_height, 1))
+    width = max(256, int((target_width * scale) // 8) * 8)
+    height = max(256, int((target_height * scale) // 8) * 8)
+    return width, height
+
+
+def configure_offline_mode() -> None:
+    if os.environ.get("CACSMS_LOCAL_IMAGE_OFFLINE") == "1":
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+
+def build_diffusion_prompts(prompt: str) -> tuple[str, str]:
+    prompt_head = prompt.split("Negative prompt:", 1)[0]
+    prompt_head = " ".join(prompt_head.replace("\n", " ").split())
+    locale_bits = []
+    for marker in ("Locale:", "Regional realism:", "Language/signage/currency constraints:", "Cultural integrity:"):
+        if marker in prompt_head:
+            segment = prompt_head.split(marker, 1)[1].split(".", 2)[0]
+            locale_bits.append(f"{marker} {segment}".strip())
+    if len(prompt_head) > 620:
+        prompt_head = prompt_head[:620].rsplit(" ", 1)[0]
+    enhanced = (
+        "photorealistic documentary wide-angle group scene in a Lagos Nigeria corporate AI operations room, "
+        "three Black Nigerian West African business professionals with natural dark-brown skin tones, "
+        "clear foreground professional centered inside safe area, complete head and upper body visible, face not cropped, "
+        "visible hands with five distinct fingers, natural knuckle joints, correct hand anatomy, hands resting on laptop keyboard or tablet, "
+        "sharp facial detail with visible eyes and pupils, natural skin pores and texture, "
+        "clear unmasked natural human face, no robotic or cyborg features, no mask, no helmet, no visor, "
+        "modern business suit, blazer, shirt or smart-casual corporate workwear, no ceremonial clothing unless explicitly requested, "
+        "medium-wide 28mm documentary camera from 10 feet away, visible headroom and side margins, "
+        "moderate depth of field, readable business operations environment, not generic home office, not empty portrait background, "
+        "contemporary Lagos Nigerian corporate technology workplace when locale is Nigeria, "
+        "AI shown only as software dashboards on screens, not as facial or body features, "
+        f"{' '.join(locale_bits)} {prompt_head}"
+    )
+    negative = (
+        "cartoon, illustration, icon, flat vector, anime, painting, sketch, fake face, distorted hands, "
+        "malformed hands, fused fingers, extra fingers, missing fingers, mutated hands, bad anatomy, "
+        "extra fingers, watermark, logo, text, blurry, low quality, soft focus, plastic skin, "
+        "extreme close-up, excessive bokeh, cyborg, robot, mechanical face, cybernetic implant, sci-fi face, "
+        "face mask, masked face, helmet, visor, mannequin, traditional costume, ceremonial attire, head wrap, "
+        "white woman, caucasian woman, european woman, generic white woman portrait, generic western office portrait, "
+        "single person closeup, headshot, beauty portrait, passport photo, empty background, shallow bokeh portrait"
+    )
+    if "Negative prompt:" in prompt:
+        supplied = prompt.split("Negative prompt:", 1)[1].strip()
+        if supplied:
+            negative = f"{negative}, {supplied}"
+    return enhanced, negative
+
+
+_pipeline = None
+
+
+def load_diffusion_pipeline(force_reload: bool = False):
+    global _pipeline
+    if _pipeline is not None and not force_reload:
+        return _pipeline
+
     model_id = os.environ.get("CACSMS_LOCAL_IMAGE_MODEL_ID", "").strip()
     if not model_id:
         raise RuntimeError("CACSMS_LOCAL_IMAGE_MODEL_ID is not set.")
@@ -232,19 +296,9 @@ def render_diffusion(prompt: str, output: Path, width: int, height: int, seed: s
     import torch
     from diffusers import AutoPipelineForText2Image, DPMSolverMultistepScheduler, StableDiffusionPipeline
 
-    if os.environ.get("CACSMS_LOCAL_IMAGE_OFFLINE") == "1":
-        os.environ["HF_HUB_OFFLINE"] = "1"
-        os.environ["TRANSFORMERS_OFFLINE"] = "1"
-
+    configure_offline_mode()
     device = os.environ.get("CACSMS_LOCAL_IMAGE_DEVICE", "cpu")
-    steps = int(os.environ.get("CACSMS_LOCAL_IMAGE_STEPS", "20"))
-    guidance = float(os.environ.get("CACSMS_LOCAL_IMAGE_GUIDANCE", "7.5"))
     local_files_only = os.environ.get("CACSMS_LOCAL_IMAGE_OFFLINE") == "1" or Path(model_id).exists()
-
-    render_width = min(width, int(os.environ.get("CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_WIDTH", "512")))
-    render_height = min(height, int(os.environ.get("CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_HEIGHT", "512")))
-    render_width = max(256, (render_width // 8) * 8)
-    render_height = max(256, (render_height // 8) * 8)
 
     model_path = Path(model_id)
     if model_path.is_file() and model_path.suffix.lower() in {".safetensors", ".ckpt"}:
@@ -283,37 +337,20 @@ def render_diffusion(prompt: str, output: Path, width: int, height: int, seed: s
         except Exception:
             pass
 
-    prompt_head = prompt.split("Negative prompt:", 1)[0]
-    prompt_head = " ".join(prompt_head.replace("\n", " ").split())
-    locale_bits = []
-    for marker in ("Locale:", "Regional realism:", "Language/signage/currency constraints:", "Cultural integrity:"):
-        if marker in prompt_head:
-            segment = prompt_head.split(marker, 1)[1].split(".", 2)[0]
-            locale_bits.append(f"{marker} {segment}".strip())
-    if len(prompt_head) > 620:
-        prompt_head = prompt_head[:620].rsplit(" ", 1)[0]
-    enhanced = (
-        "photorealistic documentary wide-angle group scene in a Lagos Nigeria corporate AI operations room, "
-        "three Black Nigerian West African business professionals with natural dark-brown skin tones, "
-        "clear foreground professional centered inside safe area, complete head and upper body visible, face not cropped, "
-        "visible hands holding tablet or using workstation, analytics dashboards and maintenance workflow screens visible, "
-        "clear unmasked natural human face, no robotic or cyborg features, no mask, no helmet, no visor, "
-        "modern business suit, blazer, shirt or smart-casual corporate workwear, no ceremonial clothing unless explicitly requested, "
-        "medium-wide 28mm documentary camera from 10 feet away, visible headroom and side margins, "
-        "moderate depth of field, readable business operations environment, not generic home office, not empty portrait background, "
-        "contemporary Lagos Nigerian corporate technology workplace when locale is Nigeria, "
-        "AI shown only as software dashboards on screens, not as facial or body features, "
-        f"{' '.join(locale_bits)} {prompt_head}"
-    )
-    negative = (
-        "cartoon, illustration, icon, flat vector, anime, painting, sketch, fake face, distorted hands, "
-        "extra fingers, watermark, logo, text, blurry, low quality, cropped face, cut off head, subject at edge, "
-        "extreme close-up, excessive bokeh, cyborg, robot, mechanical face, cybernetic implant, sci-fi face, "
-        "face mask, masked face, helmet, visor, mannequin, traditional costume, ceremonial attire, head wrap, "
-        "white woman, caucasian woman, european woman, generic white woman portrait, generic western office portrait, "
-        "single person closeup, headshot, beauty portrait, passport photo, empty background, shallow bokeh portrait"
-    )
-    generator = torch.Generator(device="cpu").manual_seed(seed_to_int(seed))
+    _pipeline = pipe
+    return _pipeline
+
+
+def run_diffusion_inference(pipe, prompt: str, output: Path, width: int, height: int, seed: str) -> None:
+    import torch
+
+    device = os.environ.get("CACSMS_LOCAL_IMAGE_DEVICE", "cpu")
+    default_steps = "24" if device == "cpu" else "32"
+    steps = int(os.environ.get("CACSMS_LOCAL_IMAGE_STEPS", default_steps))
+    guidance = float(os.environ.get("CACSMS_LOCAL_IMAGE_GUIDANCE", "7.5"))
+    render_width, render_height = diffusion_dimensions(width, height)
+    enhanced, negative = build_diffusion_prompts(prompt)
+    generator = torch.Generator(device=device).manual_seed(seed_to_int(seed))
     result = pipe(
         prompt=enhanced,
         negative_prompt=negative,
@@ -338,6 +375,11 @@ def render_diffusion(prompt: str, output: Path, width: int, height: int, seed: s
     image.save(output)
 
 
+def render_diffusion(prompt: str, output: Path, width: int, height: int, seed: str) -> None:
+    pipe = load_diffusion_pipeline()
+    run_diffusion_inference(pipe, prompt, output, width, height, seed)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt-file", required=True)
@@ -354,8 +396,9 @@ def main() -> int:
     try:
         render_diffusion(prompt, output, args.width, args.height, args.seed)
     except Exception as exc:
-        if os.environ.get("CACSMS_LOCAL_IMAGE_DISABLE_SCRIPT_FALLBACK") == "1":
-            raise
+        disable_fallback = os.environ.get("CACSMS_LOCAL_IMAGE_DISABLE_SCRIPT_FALLBACK") == "1"
+        if disable_fallback or os.environ.get("CACSMS_LOCAL_IMAGE_MODEL_ID", "").strip():
+            raise RuntimeError(f"Local diffusion render failed and script fallback is disabled: {exc}") from exc
         print(f"local neural renderer unavailable, using script fallback: {exc}", file=sys.stderr)
         fallback_image(prompt, output, args.width, args.height, args.seed)
 

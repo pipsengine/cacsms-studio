@@ -42,7 +42,27 @@ CACSMS_LOCAL_IMAGE_STEPS=20
 CACSMS_LOCAL_IMAGE_GUIDANCE=7.5
 CACSMS_LOCAL_IMAGE_DEVICE=cpu
 CACSMS_LOCAL_IMAGE_OFFLINE=1
+CACSMS_LOCAL_IMAGE_DAEMON_URL=http://127.0.0.1:3025
 ```
+
+## Warm render daemon (recommended)
+
+For production CPU rendering, keep the diffusion model loaded once instead of
+reloading it for every variant:
+
+```powershell
+.\.venv\Scripts\python.exe render_daemon.py
+```
+
+Or install the Windows service:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infrastructure\deployment\iis\install-image-render-daemon.ps1
+powershell -ExecutionPolicy Bypass -File infrastructure\deployment\iis\apply-phase1-local-image.ps1
+```
+
+Set `CACSMS_LOCAL_IMAGE_DAEMON_URL=http://127.0.0.1:3025` on the Node service so
+CACSMS calls the warm daemon instead of spawning a cold `render.py` process per image.
 
 No hosted generation provider is used. If the local renderer is not configured
 or fails, CACSMS falls back to the built-in offline procedural renderer.

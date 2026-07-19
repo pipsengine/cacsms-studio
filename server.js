@@ -31,6 +31,27 @@ const port = process.env.PORT || 3018;
 // Default the custom host to production unless development is explicit.
 const dev = process.env.NODE_ENV === "development";
 const isNamedPipe = typeof port === "string" && Number.isNaN(Number(port));
+const schedulerGuards = new Map();
+
+function createSchedulerGuard(name) {
+  if (schedulerGuards.has(name)) return schedulerGuards.get(name);
+  let running = false;
+  const guard = async (task) => {
+    if (running) {
+      console.warn(`${name}.scheduler.skipped`, { reason: "previous-run-in-flight" });
+      return;
+    }
+    running = true;
+    try {
+      await task();
+    } finally {
+      running = false;
+    }
+  };
+  schedulerGuards.set(name, guard);
+  return guard;
+}
+
 let next;
 
 try {
@@ -148,27 +169,6 @@ function onServerReady() {
   startAutonomousMusicScheduler();
 }
 
-const schedulerGuards = new Map();
-
-function createSchedulerGuard(name) {
-  if (schedulerGuards.has(name)) return schedulerGuards.get(name);
-  let running = false;
-  const guard = async (task) => {
-    if (running) {
-      console.warn(`${name}.scheduler.skipped`, { reason: "previous-run-in-flight" });
-      return;
-    }
-    running = true;
-    try {
-      await task();
-    } finally {
-      running = false;
-    }
-  };
-  schedulerGuards.set(name, guard);
-  return guard;
-}
-
 function startInternalEndpointScheduler(name, endpoint, intervalEnv, defaultIntervalMs, initialDelayMs) {
   if (dev || isNamedPipe) return;
   const intervalMs = Math.max(30_000, Number(process.env[intervalEnv] || defaultIntervalMs));
@@ -226,6 +226,10 @@ function startAutonomousStoryboardScheduler() {
 function startAutonomousImageGenerationScheduler() {
   if (dev || isNamedPipe) return;
   const intervalMs = Math.max(30_000, Number(process.env.CACSMS_IMAGE_GENERATION_INTERVAL_MS || 45_000));
+  const requestTimeoutMs = Math.max(
+    120_000,
+    Number(process.env.CACSMS_IMAGE_GENERATION_SCHEDULER_TIMEOUT_MS || 1_500_000)
+  );
   const guard = createSchedulerGuard("image-generation");
   const run = () =>
     guard(async () => {
@@ -234,7 +238,7 @@ function startAutonomousImageGenerationScheduler() {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
           body: JSON.stringify({ action: "scheduler" }),
-          signal: AbortSignal.timeout(55_000)
+          signal: AbortSignal.timeout(requestTimeoutMs)
         });
         if (!response.ok) console.error("image-generation.scheduler.failed", { status: response.status });
       } catch (error) {

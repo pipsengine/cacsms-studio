@@ -57,14 +57,86 @@ function killProcessTree(pid: number | undefined) {
   }
 }
 
-export async function renderWithLocalImageModel(input: {
+function localImageDaemonUrl() {
+  return process.env.CACSMS_LOCAL_IMAGE_DAEMON_URL?.trim() || "";
+}
+
+export function localImageRenderTimeoutMs() {
+  return Number(process.env.CACSMS_LOCAL_IMAGE_RENDER_TIMEOUT_MS ?? "2700000");
+}
+
+export function terminateOrphanedLocalImageRenders() {
+  if (process.platform !== "win32") return;
+  execFile(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -like '*render.py*' -and $_.CommandLine -notlike '*render_daemon.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    ],
+    { windowsHide: true },
+    () => undefined
+  );
+}
+
+function buildLocalImageModelRender(bytes: Buffer, method: string): LocalImageModelRender {
+  const dimensions = readPngDimensions(bytes);
+  return {
+    bytes,
+    width: dimensions.width,
+    height: dimensions.height,
+    averageLuma: averageLuma(bytes),
+    checksum: crypto.createHash("sha256").update(bytes).digest("hex"),
+    provider: "cacsms-local-neural-image-runtime",
+    model: process.env.CACSMS_LOCAL_IMAGE_MODEL_NAME || "CACSMS Local Neural Image Model",
+    method
+  };
+}
+
+async function renderWithLocalImageDaemon(input: {
   prompt: string;
   width: number;
   height: number;
   seed: string;
-}): Promise<LocalImageModelRender | null> {
+}): Promise<LocalImageModelRender> {
+  const baseUrl = localImageDaemonUrl().replace(/\/$/, "");
+  const timeoutMs = localImageRenderTimeoutMs();
+  const response = await fetch(`${baseUrl}/render`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "image/png, application/json" },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+
+  if (response.status === 409) {
+    throw new Error("Local image render daemon is busy with another diffusion job.");
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!response.ok) {
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as { message?: string };
+      throw new Error(payload.message || `Local image render daemon failed (${response.status}).`);
+    }
+    throw new Error(`Local image render daemon failed (${response.status}).`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const method =
+    response.headers.get("x-cacsms-render-method") || "warm local diffusion daemon inference";
+  return buildLocalImageModelRender(bytes, method);
+}
+
+async function renderWithLocalImageProcess(input: {
+  prompt: string;
+  width: number;
+  height: number;
+  seed: string;
+}): Promise<LocalImageModelRender> {
   const command = process.env.CACSMS_LOCAL_IMAGE_RENDER_COMMAND?.trim();
-  if (!command) return null;
+  if (!command) {
+    throw new Error("CACSMS_LOCAL_IMAGE_RENDER_COMMAND is not configured.");
+  }
 
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "cacsms-image-model-"));
   const promptFile = path.join(tmp, "prompt.txt");
@@ -82,7 +154,7 @@ export async function renderWithLocalImageModel(input: {
     }
   );
 
-  const timeoutMs = Number(process.env.CACSMS_LOCAL_IMAGE_RENDER_TIMEOUT_MS ?? "120000");
+  const timeoutMs = localImageRenderTimeoutMs();
   const useWindowsCommandShell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
   try {
     await new Promise<void>((resolve, reject) => {
@@ -119,18 +191,100 @@ export async function renderWithLocalImageModel(input: {
     });
 
     const bytes = await fs.readFile(outputFile);
-    const dimensions = readPngDimensions(bytes);
-    return {
-      bytes,
-      width: dimensions.width,
-      height: dimensions.height,
-      averageLuma: averageLuma(bytes),
-      checksum: crypto.createHash("sha256").update(bytes).digest("hex"),
-      provider: "cacsms-local-neural-image-runtime",
-      model: process.env.CACSMS_LOCAL_IMAGE_MODEL_NAME || "CACSMS Local Neural Image Model",
-      method: "local executable neural inference"
-    };
+    return buildLocalImageModelRender(bytes, "local executable neural inference");
   } finally {
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+let activeRender: Promise<LocalImageModelRender | null> | undefined;
+
+async function executeLocalImageRender(input: {
+  prompt: string;
+  width: number;
+  height: number;
+  seed: string;
+}): Promise<LocalImageModelRender | null> {
+  const daemonUrl = localImageDaemonUrl();
+  if (daemonUrl) {
+    return renderWithLocalImageDaemon(input);
+  }
+
+  if (!process.env.CACSMS_LOCAL_IMAGE_RENDER_COMMAND?.trim()) {
+    return null;
+  }
+
+  return renderWithLocalImageProcess(input);
+}
+
+export async function renderWithLocalImageModel(input: {
+  prompt: string;
+  width: number;
+  height: number;
+  seed: string;
+}): Promise<LocalImageModelRender | null> {
+  while (activeRender) {
+    await activeRender.catch(() => undefined);
+  }
+
+  const current = executeLocalImageRender(input);
+  activeRender = current;
+  try {
+    return await current;
+  } finally {
+    if (activeRender === current) {
+      activeRender = undefined;
+    }
+  }
+}
+
+export async function getLocalImageDaemonHealth(): Promise<{
+  reachable: boolean;
+  modelLoaded: boolean;
+  activeRender: boolean;
+  message: string;
+}> {
+  const daemonUrl = localImageDaemonUrl();
+  if (!daemonUrl) {
+    return {
+      reachable: false,
+      modelLoaded: false,
+      activeRender: false,
+      message: "Local image render daemon URL is not configured."
+    };
+  }
+
+  try {
+    const response = await fetch(`${daemonUrl.replace(/\/$/, "")}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5_000)
+    });
+    if (!response.ok) {
+      return {
+        reachable: true,
+        modelLoaded: false,
+        activeRender: false,
+        message: `Daemon health check failed (${response.status}).`
+      };
+    }
+    const payload = (await response.json()) as {
+      modelLoaded?: boolean;
+      activeRender?: boolean;
+      modelError?: string | null;
+      status?: string;
+    };
+    return {
+      reachable: true,
+      modelLoaded: Boolean(payload.modelLoaded),
+      activeRender: Boolean(payload.activeRender),
+      message: payload.modelError || payload.status || "Daemon reachable."
+    };
+  } catch (error) {
+    return {
+      reachable: false,
+      modelLoaded: false,
+      activeRender: false,
+      message: error instanceof Error ? error.message : "Daemon unreachable."
+    };
   }
 }

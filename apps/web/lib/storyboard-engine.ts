@@ -1354,7 +1354,9 @@ async function loadProductionPhotorealImageAssets(pool: sql.ConnectionPool, prod
       INNER JOIN cacsms.ImageGenerationAssets a ON a.ImageGenerationAssetId = v.ImageGenerationAssetId
       WHERE CONVERT(nvarchar(36), v.ProductionId) = @productionId
         AND v.ImageGenerationAssetId IS NOT NULL
+        AND v.State = N'Completed'
         AND a.BrowserLoadStatus = N'loaded'
+        AND ISNULL(v.QualityScore, 0) >= 82
       ORDER BY v.VariantNumber ASC, v.UpdatedAt DESC;
     `);
     const seen = new Set<string>();
