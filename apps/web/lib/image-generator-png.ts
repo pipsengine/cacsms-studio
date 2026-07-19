@@ -106,12 +106,88 @@ function fillEllipse(rows: Buffer, width: number, height: number, cx: number, cy
   }
 }
 
+function fillEllipseShaded(
+  rows: Buffer,
+  width: number,
+  height: number,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  base: Rgba,
+  light: Rgba,
+  shadow: Rgba
+) {
+  const left = Math.floor(cx - rx);
+  const right = Math.ceil(cx + rx);
+  const top = Math.floor(cy - ry);
+  const bottom = Math.ceil(cy + ry);
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      const nx = (x - cx) / Math.max(rx, 1);
+      const ny = (y - cy) / Math.max(ry, 1);
+      const distance = nx * nx + ny * ny;
+      if (distance > 1) continue;
+      const highlight = Math.max(0, 1 - Math.hypot(nx + 0.32, ny + 0.38) * 1.7);
+      const shade = Math.max(0, nx * 0.55 + ny * 0.35);
+      blendPixel(rows, width, height, x, y, [
+        clampByte(base[0] * (1 - shade) + shadow[0] * shade + light[0] * highlight * 0.18),
+        clampByte(base[1] * (1 - shade) + shadow[1] * shade + light[1] * highlight * 0.18),
+        clampByte(base[2] * (1 - shade) + shadow[2] * shade + light[2] * highlight * 0.18),
+        base[3]
+      ]);
+    }
+  }
+}
+
+function fillJacket(rows: Buffer, width: number, height: number, cx: number, top: number, shoulder: number, heightPx: number, color: Rgba) {
+  for (let y = Math.floor(top); y < Math.ceil(top + heightPx); y += 1) {
+    const progress = (y - top) / Math.max(1, heightPx);
+    const half = shoulder * (1 - progress * 0.42);
+    for (let x = Math.floor(cx - half); x <= Math.ceil(cx + half); x += 1) {
+      const edge = Math.abs(x - cx) / Math.max(half, 1);
+      const shade = 1 - edge * 0.35 - progress * 0.18;
+      blendPixel(rows, width, height, x, y, [
+        clampByte(color[0] * shade),
+        clampByte(color[1] * shade),
+        clampByte(color[2] * shade),
+        color[3]
+      ]);
+    }
+  }
+}
+
 function drawLine(rows: Buffer, width: number, height: number, x1: number, y1: number, x2: number, y2: number, thickness: number, color: Rgba) {
   const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1), 1);
   for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
     fillEllipse(rows, width, height, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, thickness, thickness, color);
   }
+}
+
+function drawPhotographicPerson(rows: Buffer, width: number, height: number, cx: number, baseY: number, scale: number, skin: Rgba, jacket: Rgba, seed: Buffer, index: number) {
+  const light: Rgba = [255, 226, 196, 255];
+  const skinShadow: Rgba = [72, 38, 30, 255];
+  const headY = baseY - 162 * scale;
+  const bodyTop = baseY - 114 * scale;
+  fillEllipse(rows, width, height, cx, baseY + 8 * scale, 62 * scale, 12 * scale, [0, 5, 14, 120]);
+  drawLine(rows, width, height, cx - 42 * scale, bodyTop + 18 * scale, cx - 78 * scale, bodyTop + 76 * scale, 12 * scale, jacket);
+  drawLine(rows, width, height, cx + 42 * scale, bodyTop + 18 * scale, cx + 76 * scale, bodyTop + 62 * scale, 12 * scale, jacket);
+  drawLine(rows, width, height, cx - 76 * scale, bodyTop + 76 * scale, cx - 43 * scale, bodyTop + 96 * scale, 7 * scale, skin);
+  drawLine(rows, width, height, cx + 76 * scale, bodyTop + 62 * scale, cx + 98 * scale, bodyTop + 48 * scale, 7 * scale, skin);
+  fillJacket(rows, width, height, cx, bodyTop, 54 * scale, 114 * scale, jacket);
+  fillRect(rows, width, height, cx - 18 * scale, bodyTop + 4 * scale, 36 * scale, 80 * scale, [230, 237, 244, 235]);
+  drawLine(rows, width, height, cx, bodyTop + 10 * scale, cx, bodyTop + 74 * scale, 3.5 * scale, index % 2 ? [67, 196, 228, 240] : [124, 90, 255, 235]);
+  fillEllipseShaded(rows, width, height, cx, headY, 31 * scale, 39 * scale, skin, light, skinShadow);
+  fillEllipse(rows, width, height, cx, headY - 31 * scale, 32 * scale, 13 * scale, [29, 24, 26, 248]);
+  fillEllipse(rows, width, height, cx - 25 * scale, headY - 10 * scale, 8 * scale, 18 * scale, [29, 24, 26, 235]);
+  fillEllipse(rows, width, height, cx + 24 * scale, headY - 9 * scale, 7 * scale, 17 * scale, [29, 24, 26, 225]);
+  fillEllipse(rows, width, height, cx - 10 * scale, headY - 4 * scale, 2.2 * scale, 2.1 * scale, [4, 11, 21, 245]);
+  fillEllipse(rows, width, height, cx + 10 * scale, headY - 4 * scale, 2.2 * scale, 2.1 * scale, [4, 11, 21, 245]);
+  drawLine(rows, width, height, cx - 9 * scale, headY + 16 * scale, cx + 10 * scale, headY + 15 * scale, 1.4 * scale, [105, 44, 43, 185]);
+  fillRect(rows, width, height, cx - 12 * scale, headY + 36 * scale, 24 * scale, 20 * scale, skin);
+  drawLine(rows, width, height, cx - 17 * scale, baseY - 2 * scale, cx - 29 * scale, baseY + 42 * scale, 9 * scale, [17, 28, 47, 240]);
+  drawLine(rows, width, height, cx + 17 * scale, baseY - 2 * scale, cx + 30 * scale, baseY + 42 * scale, 9 * scale, [17, 28, 47, 240]);
 }
 
 function drawPanel(rows: Buffer, width: number, height: number, x: number, y: number, w: number, h: number, seed: Buffer) {
@@ -207,11 +283,11 @@ function drawScene(rows: Buffer, width: number, height: number, prompt: string, 
   fillRect(rows, width, height, width * 0.47, height * 0.585, width * 0.14, height * 0.06, [115, 92, 255, 170]);
   fillRect(rows, width, height, width * 0.66, height * 0.59, width * 0.1, height * 0.055, [42, 200, 236, 160]);
 
-  const skins: Rgba[] = [[96, 57, 42, 255], [171, 108, 72, 255], [223, 166, 117, 255], [126, 82, 57, 255]];
-  const jackets: Rgba[] = [[19, 41, 70, 255], [49, 58, 115, 255], [21, 86, 102, 255], [72, 48, 101, 255]];
-  drawPerson(rows, width, height, width * 0.38, height * 0.71, 1.05, skins[seed[0] % skins.length], jackets[seed[1] % jackets.length], seed, 0);
-  drawPerson(rows, width, height, width * 0.55, height * 0.7, 1.12, skins[seed[2] % skins.length], jackets[seed[3] % jackets.length], seed, 1);
-  drawPerson(rows, width, height, width * 0.7, height * 0.72, 0.96, skins[seed[4] % skins.length], jackets[seed[5] % jackets.length], seed, 2);
+  const skins: Rgba[] = [[88, 52, 39, 255], [154, 93, 63, 255], [205, 146, 98, 255], [116, 74, 52, 255]];
+  const jackets: Rgba[] = [[18, 35, 61, 255], [36, 48, 97, 255], [18, 74, 91, 255], [56, 44, 89, 255]];
+  drawPhotographicPerson(rows, width, height, width * 0.35, height * 0.73, 1.08, skins[seed[0] % skins.length], jackets[seed[1] % jackets.length], seed, 0);
+  drawPhotographicPerson(rows, width, height, width * 0.52, height * 0.72, 1.18, skins[seed[2] % skins.length], jackets[seed[3] % jackets.length], seed, 1);
+  drawPhotographicPerson(rows, width, height, width * 0.69, height * 0.74, 1.0, skins[seed[4] % skins.length], jackets[seed[5] % jackets.length], seed, 2);
 
   for (let i = 0; i < 6; i += 1) {
     const cx = width * (0.21 + i * 0.11);
@@ -221,6 +297,7 @@ function drawScene(rows: Buffer, width: number, height: number, prompt: string, 
 
   drawNeuralArc(rows, width, height, width * 0.55, height * 0.48, width * 0.26, seed);
   drawTablet(rows, width, height, width * 0.78, height * 0.54, width * 0.12, height * 0.14, seed.subarray(6));
+  drawLine(rows, width, height, width * 0.18, height * 0.76, width * 0.88, height * 0.58, 1.4, [160, 217, 235, 45]);
 
   if (/factory|industrial|plant|maintenance|operations/i.test(prompt)) {
     for (let i = 0; i < 5; i += 1) {

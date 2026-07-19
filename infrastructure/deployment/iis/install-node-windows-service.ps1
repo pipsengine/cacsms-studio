@@ -119,7 +119,7 @@ Invoke-Nssm set $ServiceName AppParameters $serverPath
 Invoke-Nssm set $ServiceName DisplayName "CACSMS Studio Node Runtime"
 Invoke-Nssm set $ServiceName Description "Runs the CACSMS Studio Next.js runtime behind IIS reverse proxy."
 Invoke-Nssm set $ServiceName Start SERVICE_AUTO_START
-Invoke-Nssm set $ServiceName AppEnvironmentExtra "NODE_ENV=production" "PORT=$InternalPort" "CACSMS_PUBLIC_PORT=$PublicPort"
+Invoke-Nssm set $ServiceName AppEnvironmentExtra "NODE_ENV=production" "PORT=$InternalPort" "CACSMS_PUBLIC_PORT=$PublicPort" "CACSMS_PROJECT_ROOT=$RootPath"
 Invoke-Nssm set $ServiceName AppExit Default Restart
 Invoke-Nssm set $ServiceName AppRestartDelay 5000
 Invoke-Nssm set $ServiceName AppThrottle 1500

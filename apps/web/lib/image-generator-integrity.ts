@@ -7,6 +7,7 @@ export const IMAGE_GENERATION_STATES = [
   "Validating",
   "Reviewing",
   "Revising",
+  "Rejected",
   "Completed",
   "Blocked",
   "Failed"
@@ -36,6 +37,7 @@ const stateProgressMap: Record<ImageGenerationState, number> = {
   Validating: 72,
   Reviewing: 84,
   Revising: 70,
+  Rejected: 0,
   Completed: 100,
   Blocked: 0,
   Failed: 0

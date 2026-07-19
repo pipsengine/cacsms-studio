@@ -3,6 +3,11 @@ node_modules/
 dist/
 coverage/
 logs/
+.generated/
+local-models/image-renderer/.venv/
+local-models/image-renderer/models/
+local-models/image-renderer/output-*.png
+local-models/image-renderer/prompt-test.txt
 infrastructure/deployment/iis/.tools/
 migration.env.local
 .turbo/

@@ -65,6 +65,10 @@ Run the service installer from an elevated PowerShell session. It configures the
 `cacsms-studio-node` service for automatic startup, restart on failure, and logs
 under `logs/`.
 
+The installer also sets `CACSMS_PROJECT_ROOT` to the repository root. Keep this
+environment variable in place; the independent image generator uses it to write
+durable generated PNGs outside `.next/standalone`.
+
 ## Verify
 
 ```powershell
@@ -86,3 +90,70 @@ pnpm start
 ```
 
 The standalone Node server defaults to internal port `3018` for IIS reverse proxy. IIS owns the public `3008` binding.
+
+## Independent Image Generation
+
+CACSMS Studio generates visual assets locally by default. The built-in engine is:
+
+```text
+cacsms-autonomous-procedural-visual-engine
+CACSMS Original Human/3D Scene Renderer v2
+```
+
+It does not call external image APIs, stock image services, or hosted model
+providers. Generated assets are stored under:
+
+```text
+C:\Content-Generation\cacsms-studio\.generated\visuals
+```
+
+Future local GPU/neural image inference should be added behind the same local
+worker contract in `apps/image-worker`, while keeping generation private and
+independent.
+
+Optional private neural image runtime:
+
+```text
+CACSMS_LOCAL_IMAGE_RENDER_COMMAND=C:\LocalModels\image-renderer\render.exe
+CACSMS_LOCAL_IMAGE_RENDER_ARGS=--prompt-file {promptFile} --output {outputFile} --width {width} --height {height} --seed {seed}
+CACSMS_LOCAL_IMAGE_MODEL_DIR=C:\LocalModels\image-renderer
+CACSMS_LOCAL_IMAGE_MODEL_NAME=CACSMS Private Photoreal Model
+CACSMS_LOCAL_IMAGE_RENDER_TIMEOUT_MS=120000
+```
+
+The command must be a local executable and must write a PNG file to
+`{outputFile}`. CACSMS validates the PNG, persists it under `.generated`, and
+records the provider as `cacsms-local-neural-image-runtime`. If no command is
+configured, the built-in offline renderer remains the fallback.
+
+## Independent Scene Video Packages
+
+Scene-video generation also runs locally. When storyboard, narration cues, and a
+verified image asset are available, the scene-video scheduler persists an HTML5
+motion package with camera movement, timing, approved visual source, checksum,
+and timeline routing metadata.
+
+```text
+CACSMS Independent HTML5 Motion Renderer v1
+C:\Content-Generation\cacsms-studio\.generated\scene-video
+```
+
+No hosted video generation provider is required for this package path. A local
+FFmpeg or local neural video renderer can later be added behind the same
+durable storage and checksum contract when MP4 output is required.
+
+## Independent Audio Generation
+
+Narration and music generation also persist local WAV assets without hosted
+voice or music providers.
+
+```text
+CACSMS Independent Local Narration Synthesizer v1
+CACSMS Independent Local Score Composer v1
+C:\Content-Generation\cacsms-studio\.generated\audio
+```
+
+The narration renderer creates deterministic speech-shaped PCM audio from the
+approved transcript. The music renderer creates an original score bed from cue
+timing, BPM, and production style. Both routes verify checksums before serving
+the generated WAV asset.

@@ -87,14 +87,57 @@ function titleCase(value: string) {
 
 function stateTone(state: string) {
   if (/completed/i.test(state)) return "good";
-  if (/blocked|failed/i.test(state)) return "danger";
+  if (/blocked|failed|rejected/i.test(state)) return "danger";
   return "warning";
 }
+
+function emptyQuality() {
+  return {
+    brief: 0,
+    humanPhotorealism: 0,
+    facialRealism: 0,
+    anatomy: 0,
+    subjectDiversity: 0,
+    lightingPerspective: 0,
+    sharpnessResolution: 0,
+    subjectVisibility: 0,
+    identityConsistency: 0,
+    geographicAccuracy: 0,
+    culturalIntegrity: 0,
+    brand: 0,
+    composition: 0,
+    technical: 0,
+    originality: 0,
+    safety: 0
+  };
+}
+
+const DEFAULT_LOCALE_PROFILE = {
+  hierarchy: ["Nigeria", "Lagos State", "Lagos", "Victoria Island", "Contemporary corporate office", "Preview scene"],
+  country: "Nigeria",
+  region: "Lagos State",
+  city: "Lagos",
+  locality: "Victoria Island",
+  environment: "Contemporary corporate office",
+  audience: "Nigerian professionals and enterprise decision makers",
+  demographics: "Diverse adult Nigerian professionals",
+  clothing: "Contemporary corporate and technical workwear",
+  architecture: "Modern Lagos commercial interiors",
+  infrastructure: "Locally plausible enterprise technology",
+  climate: "Tropical West African lighting context",
+  language: "English (Nigeria)",
+  currency: "NGN / naira where visible",
+  dateFormat: "DD/MM/YYYY",
+  signage: "No foreign signage unless supported by the brief",
+  culturalNotes: ["Avoid stereotypes, caricatures, tokenism and unsupported cultural symbols."],
+  sources: ["Persisted production brief", "Geographic Intelligence", "People Intelligence", "Knowledge Universe", "Brand profile"],
+  stereotypeAvoidance: ["No unsupported traditional costume", "No foreign skyline", "No inaccurate currency or signage"]
+};
 
 function variantTone(status: ImageGenerationState) {
   if (status === "Completed") return styles.variantReady;
   if (["Generating", "Uploading", "Persisting", "Validating", "Reviewing", "Revising"].includes(status)) return styles.variantCurrent;
-  if (["Blocked", "Failed"].includes(status)) return styles.variantFailed;
+  if (["Blocked", "Failed", "Rejected"].includes(status)) return styles.variantFailed;
   return "";
 }
 
@@ -132,7 +175,8 @@ function buildDevelopmentPreview(lastSync: string | null, reason?: string): Work
       composition: "No production render",
       style: "Development only",
       aspectRatio: "16:9",
-      brandProfile: "Preview mode"
+      brandProfile: "Preview mode",
+      localeProfile: DEFAULT_LOCALE_PROFILE
     },
     constraints: {
       required: ["Development preview flag"],
@@ -168,14 +212,7 @@ function buildDevelopmentPreview(lastSync: string | null, reason?: string): Work
         providerResponse: null
       }
     ],
-    quality: {
-      brief: 0,
-      brand: 0,
-      composition: 0,
-      technical: 0,
-      originality: 0,
-      safety: 100
-    },
+    quality: { ...emptyQuality(), safety: 100 },
     issues: [
       {
         title: "Development preview mode",
@@ -238,7 +275,8 @@ function buildWaitingWorkspace(lastSync: string | null, reason?: string): Worksp
       composition: "No layout can be generated before a production is selected",
       style: "Awaiting production brief",
       aspectRatio: "16:9",
-      brandProfile: "CACSMS Corporate 2025"
+      brandProfile: "CACSMS Corporate 2025",
+      localeProfile: DEFAULT_LOCALE_PROFILE
     },
     constraints: {
       required: ["Eligible production in visual pipeline", "Persisted brief", "Autonomous job assignment"],
@@ -279,14 +317,7 @@ function buildWaitingWorkspace(lastSync: string | null, reason?: string): Worksp
         providerResponse: null
       }
     ],
-    quality: {
-      brief: 0,
-      brand: 0,
-      composition: 0,
-      technical: 0,
-      originality: 0,
-      safety: 0
-    },
+    quality: emptyQuality(),
     issues: [
       {
         title: "No persisted image generation candidate is available.",
@@ -328,7 +359,7 @@ function buildWaitingWorkspace(lastSync: string | null, reason?: string): Worksp
 
 function deriveWorkflowStep(state: string, browserLoadStatus: string) {
   if (/completed/i.test(state)) return 5;
-  if (/revising|blocked|failed/i.test(state)) return 4;
+  if (/revising|blocked|failed|rejected/i.test(state)) return 4;
   if (/reviewing|validating/i.test(state) || browserLoadStatus === "loaded") return 3;
   if (/generating|uploading|persisting/i.test(state)) return 2;
   if (/queued/i.test(state)) return 1;
@@ -344,6 +375,16 @@ function deriveWorkflowState(index: number, active: number, state: string) {
 function qualityEntries(content: WorkspaceProduction) {
   return [
     { key: "brief", label: "Brief Adherence", value: content.quality.brief, icon: <Sparkles size={14} /> },
+    { key: "humanPhotorealism", label: "Human Photorealism", value: content.quality.humanPhotorealism, icon: <ImageIcon size={14} /> },
+    { key: "facialRealism", label: "Facial Realism", value: content.quality.facialRealism, icon: <Bot size={14} /> },
+    { key: "anatomy", label: "Hands & Anatomy", value: content.quality.anatomy, icon: <Activity size={14} /> },
+    { key: "subjectDiversity", label: "Subject Diversity", value: content.quality.subjectDiversity, icon: <Sparkles size={14} /> },
+    { key: "lightingPerspective", label: "Lighting & Perspective", value: content.quality.lightingPerspective, icon: <ImageIcon size={14} /> },
+    { key: "sharpnessResolution", label: "Sharpness & Resolution", value: content.quality.sharpnessResolution, icon: <Activity size={14} /> },
+    { key: "subjectVisibility", label: "Subject Visibility", value: content.quality.subjectVisibility, icon: <Expand size={14} /> },
+    { key: "identityConsistency", label: "Identity Consistency", value: content.quality.identityConsistency, icon: <Bot size={14} /> },
+    { key: "geographicAccuracy", label: "Geographic Accuracy", value: content.quality.geographicAccuracy, icon: <Monitor size={14} /> },
+    { key: "culturalIntegrity", label: "Cultural Integrity", value: content.quality.culturalIntegrity, icon: <ShieldCheck size={14} /> },
     { key: "brand", label: "Brand Alignment", value: content.quality.brand, icon: <Palette size={14} /> },
     { key: "composition", label: "Composition", value: content.quality.composition, icon: <ImageIcon size={14} /> },
     { key: "technical", label: "Technical Quality", value: content.quality.technical, icon: <Activity size={14} /> },
@@ -539,7 +580,7 @@ export function AutonomousImageGeneratorWorkspace({
   const productions = useMemo(() => {
     return [...(data?.productions ?? [])].sort((left, right) => {
       const score = (item: ImageGeneratorProduction) => {
-        if (item.state === "Failed") return 5;
+        if (item.state === "Failed" || item.state === "Rejected") return 5;
         if (item.state === "Blocked") return 4;
         if (["Reviewing", "Revising", "Validating"].includes(item.state)) return 3;
         if (["Generating", "Uploading", "Persisting"].includes(item.state)) return 2;
@@ -795,21 +836,21 @@ export function AutonomousImageGeneratorWorkspace({
                       void reportImageLoadFailure();
                     }}
                   />
-                  <div className={styles.safeGuide}>
-                    <div className={styles.safeFrame} />
-                    <div className={styles.safeLabel}>Safe Area ({content.constraints.safeArea})</div>
-                  </div>
-                  <div className={styles.canvasTopTags}>
-                    <span className={styles.issueTag}>
-                      <AlertTriangle size={13} />
-                      Issue
-                      <em>{content.issues.length}</em>
-                    </span>
-                  </div>
-                  <div className={styles.canvasBottomTag}>
-                    <ImageIcon size={14} />
-                    <span>{content.brief.subject}</span>
-                  </div>
+                  {imageLoadState !== "loaded" ? (
+                    <>
+                      <div className={styles.safeGuide}>
+                        <div className={styles.safeFrame} />
+                        <div className={styles.safeLabel}>Safe Area ({content.constraints.safeArea})</div>
+                      </div>
+                      <div className={styles.canvasTopTags}>
+                        <span className={styles.issueTag}>
+                          <AlertTriangle size={13} />
+                          Issue
+                          <em>{content.issues.length}</em>
+                        </span>
+                      </div>
+                    </>
+                  ) : null}
                   {imageLoadState === "loading" ? (
                     <div className={styles.assetOverlay}>
                       <strong>Loading persisted asset URL</strong>

@@ -10,5 +10,6 @@ Set-Location $RootPath
 $env:NODE_ENV = "production"
 $env:PORT = "$InternalPort"
 $env:CACSMS_PUBLIC_PORT = "$PublicPort"
+$env:CACSMS_PROJECT_ROOT = "$RootPath"
 
 node "$RootPath\server.js"

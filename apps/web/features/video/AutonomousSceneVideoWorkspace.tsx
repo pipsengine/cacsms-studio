@@ -150,7 +150,11 @@ function buildWaitingWorkspace(lastSync: string | null, reason?: string): SceneV
       assetUrl: null,
       label: "Waiting for visual source",
       tile: "Waiting for Storyboard",
-      assetStatus: "Not stored"
+      assetStatus: "Not stored",
+      clipUrl: null,
+      clipMimeType: null,
+      clipFileName: null,
+      clipChecksumSha256: null
     },
     quality: {
       storyboard: 0,
@@ -601,7 +605,14 @@ export function AutonomousSceneVideoWorkspace({
               </span>
             </div>
             <div className={styles.controlRoom}>
-              {content.preview.assetUrl ? (
+              {content.preview.clipUrl ? (
+                <iframe
+                  className={styles.previewImage}
+                  src={content.preview.clipUrl}
+                  title={`${content.scene} local scene-video package`}
+                  sandbox="allow-same-origin"
+                />
+              ) : content.preview.assetUrl ? (
                 <img className={styles.previewImage} src={content.preview.assetUrl} alt={content.preview.label} />
               ) : null}
               <div className={styles.wall}>
@@ -700,7 +711,7 @@ export function AutonomousSceneVideoWorkspace({
               </div>
               <dl className={styles.rows}>
                 <dt>Format</dt>
-                <dd>MP4 / H.264</dd>
+                <dd>{content.preview.clipMimeType ? "HTML5 motion package" : "Waiting for local render package"}</dd>
                 <dt>Resolution</dt>
                 <dd>{content.resolution}</dd>
                 <dt>Frame Rate</dt>
@@ -709,6 +720,8 @@ export function AutonomousSceneVideoWorkspace({
                 <dd>{formatDuration(content.durationSeconds)}</dd>
                 <dt>Storage</dt>
                 <dd>{content.preview.assetStatus}</dd>
+                <dt>Clip</dt>
+                <dd>{content.preview.clipFileName ?? "Not persisted yet"}</dd>
               </dl>
             </section>
 
