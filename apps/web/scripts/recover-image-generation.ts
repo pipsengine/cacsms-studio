@@ -40,6 +40,36 @@ async function main() {
       FROM cacsms.ImageGenerationJobs j
       INNER JOIN cacsms.Productions p ON p.ProductionId = j.ProductionId
       WHERE p.Code = @code AND j.State = N'Generating';
+
+      UPDATE j
+      SET j.State = N'Queued',
+          j.FailureReason = NULL,
+          j.NextRecoveryAction = N'Retry neural render after rejected-job recovery.',
+          j.StorageResult = N'Manual recovery reopened a rejected job with queued variants.',
+          j.UpdatedAt = SYSUTCDATETIME(),
+          j.LastTransitionAt = SYSUTCDATETIME()
+      FROM cacsms.ImageGenerationJobs j
+      INNER JOIN cacsms.Productions p ON p.ProductionId = j.ProductionId
+      WHERE p.Code = @code
+        AND j.State = N'Rejected'
+        AND EXISTS (
+          SELECT 1
+          FROM cacsms.ImageGenerationVariants v
+          WHERE v.ImageGenerationJobId = j.ImageGenerationJobId AND v.State = N'Queued'
+        );
+
+      UPDATE p
+      SET p.Stage = N'visual-generation',
+          p.Status = N'active',
+          p.Progress = 70,
+          p.UpdatedAt = SYSUTCDATETIME()
+      FROM cacsms.Productions p
+      WHERE p.Code = @code
+        AND EXISTS (
+          SELECT 1
+          FROM cacsms.ImageGenerationJobs j
+          WHERE j.ProductionId = p.ProductionId AND j.State IN (N'Queued', N'Generating', N'Revising')
+        );
     `);
   console.log(`Recovered stuck image generation for ${code}.`);
 

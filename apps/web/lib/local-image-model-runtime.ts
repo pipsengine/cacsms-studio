@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { execFile } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { GeneratedPng } from "@/lib/image-generator-png";
@@ -93,6 +94,53 @@ function buildLocalImageModelRender(bytes: Buffer, method: string): LocalImageMo
   };
 }
 
+function requestDaemon(
+  method: "GET" | "POST",
+  targetUrl: string,
+  timeoutMs: number,
+  body?: Record<string, unknown>
+): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(targetUrl);
+    const payload = body ? Buffer.from(JSON.stringify(body)) : undefined;
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === "https:" ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        method,
+        headers: payload
+          ? {
+              "Content-Type": "application/json",
+              Accept: "image/png, application/json",
+              "Content-Length": payload.length
+            }
+          : {
+              Accept: "application/json"
+            },
+        timeout: timeoutMs
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        res.on("end", () => {
+          resolve({
+            statusCode: res.statusCode ?? 500,
+            headers: res.headers,
+            body: Buffer.concat(chunks)
+          });
+        });
+      }
+    );
+    req.on("timeout", () => {
+      req.destroy(new Error(`Local image render daemon timed out after ${timeoutMs}ms.`));
+    });
+    req.on("error", reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
 async function renderWithLocalImageDaemon(input: {
   prompt: string;
   width: number;
@@ -101,30 +149,23 @@ async function renderWithLocalImageDaemon(input: {
 }): Promise<LocalImageModelRender> {
   const baseUrl = localImageDaemonUrl().replace(/\/$/, "");
   const timeoutMs = localImageRenderTimeoutMs();
-  const response = await fetch(`${baseUrl}/render`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "image/png, application/json" },
-    body: JSON.stringify(input),
-    signal: AbortSignal.timeout(timeoutMs)
-  });
+  const { statusCode, headers, body } = await requestDaemon("POST", `${baseUrl}/render`, timeoutMs, input);
 
-  if (response.status === 409) {
+  if (statusCode === 409) {
     throw new Error("Local image render daemon is busy with another diffusion job.");
   }
 
-  const contentType = response.headers.get("content-type") || "";
-  if (!response.ok) {
+  const contentType = String(headers["content-type"] || "");
+  if (statusCode < 200 || statusCode >= 300) {
     if (contentType.includes("application/json")) {
-      const payload = (await response.json()) as { message?: string };
-      throw new Error(payload.message || `Local image render daemon failed (${response.status}).`);
+      const payload = JSON.parse(body.toString("utf8")) as { message?: string };
+      throw new Error(payload.message || `Local image render daemon failed (${statusCode}).`);
     }
-    throw new Error(`Local image render daemon failed (${response.status}).`);
+    throw new Error(`Local image render daemon failed (${statusCode}).`);
   }
 
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const method =
-    response.headers.get("x-cacsms-render-method") || "warm local diffusion daemon inference";
-  return buildLocalImageModelRender(bytes, method);
+  const method = String(headers["x-cacsms-render-method"] || "warm local diffusion daemon inference");
+  return buildLocalImageModelRender(body, method);
 }
 
 async function renderWithLocalImageProcess(input: {
@@ -255,19 +296,16 @@ export async function getLocalImageDaemonHealth(): Promise<{
   }
 
   try {
-    const response = await fetch(`${daemonUrl.replace(/\/$/, "")}/health`, {
-      method: "GET",
-      signal: AbortSignal.timeout(5_000)
-    });
-    if (!response.ok) {
+    const { statusCode, body } = await requestDaemon("GET", `${daemonUrl.replace(/\/$/, "")}/health`, 5_000);
+    if (statusCode < 200 || statusCode >= 300) {
       return {
         reachable: true,
         modelLoaded: false,
         activeRender: false,
-        message: `Daemon health check failed (${response.status}).`
+        message: `Daemon health check failed (${statusCode}).`
       };
     }
-    const payload = (await response.json()) as {
+    const payload = JSON.parse(body.toString("utf8")) as {
       modelLoaded?: boolean;
       activeRender?: boolean;
       modelError?: string | null;
