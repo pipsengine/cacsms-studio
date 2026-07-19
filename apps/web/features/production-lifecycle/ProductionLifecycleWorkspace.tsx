@@ -298,6 +298,6 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
         <Link href="/production-workflow/discover" className={styles.allStages}>View complete lifecycle</Link>
         {next ? <Link href={`/production-workflow/${next.id}`}><span><small>Next stage</small><b>{next.label}</b></span><ArrowRight size={16} /></Link> : <span />}
       </footer>
-    </section>
+  </section>
   );
 }

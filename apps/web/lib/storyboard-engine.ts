@@ -407,6 +407,35 @@ function safeMetadataSnapshot(metadata: Record<string, unknown>) {
   return snapshot as unknown as PersistedStoryboardSnapshot;
 }
 
+function scoreProductionFrameWorkPriority(row: ProductionRow) {
+  const metadata = parseMetadata(row.MetadataJson);
+  const snapshot = safeMetadataSnapshot(metadata);
+  if (!snapshot?.scenes?.length) return 1_000;
+
+  const previewIds: string[] = [];
+  let totalShots = 0;
+  for (const scene of snapshot.scenes) {
+    for (const shot of scene.shots) {
+      totalShots += 1;
+      if (shot.previewAssetId) previewIds.push(shot.previewAssetId);
+    }
+  }
+
+  const duplicateCount = previewIds.length - new Set(previewIds).size;
+  const missingCount = Math.max(0, totalShots - previewIds.length);
+  if (duplicateCount > 0) return 900 + duplicateCount * 10 + missingCount;
+  if (missingCount > 0) return 500 + missingCount;
+  return 0;
+}
+
+function prioritizeStoryboardSchedulerRows(rows: ProductionRow[]) {
+  return [...rows].sort((left, right) => {
+    const priorityDelta = scoreProductionFrameWorkPriority(right) - scoreProductionFrameWorkPriority(left);
+    if (priorityDelta !== 0) return priorityDelta;
+    return new Date(right.UpdatedAt).getTime() - new Date(left.UpdatedAt).getTime();
+  });
+}
+
 function missingSchema(error: unknown) {
   return (
     error instanceof Error &&
@@ -1347,18 +1376,6 @@ async function loadProductionPhotorealImageAssets(pool: sql.ConnectionPool, prod
   }
 }
 
-function clearShotPreview(shot: StoryboardShot): StoryboardShot {
-  return {
-    ...shot,
-    previewAssetId: null,
-    previewUrl: null,
-    previewFileName: null,
-    previewChecksumSha256: null,
-    previewRenderMode: null,
-    previewSource: null
-  };
-}
-
 function linkImageGeneratorPreview(shot: StoryboardShot, asset: PhotorealImageAsset) {
   return {
     ...shot,
@@ -1378,9 +1395,9 @@ async function completeStoryboardFrameGeneration(
 ): Promise<ReturnType<typeof deriveStoryboardData>> {
   if (!derived.snapshot.scenes.length) return derived;
 
-  const maxPerRun = Math.max(
-    1,
-    Number.parseInt(process.env.CACSMS_STORYBOARD_FRAMES_PER_CYCLE ?? "3", 10) || 3
+  const maxLocalRenders = Math.max(
+    0,
+    Number.parseInt(process.env.CACSMS_STORYBOARD_FRAMES_PER_CYCLE ?? "0", 10) || 0
   );
   const maxImageGenLinks = Math.max(
     1,
@@ -1415,8 +1432,13 @@ async function completeStoryboardFrameGeneration(
         continue;
       }
 
-      if (rendered >= maxPerRun) {
-        updatedShots.push(clearShotPreview(shot));
+      if (rendered >= maxLocalRenders) {
+        updatedShots.push(shot);
+        continue;
+      }
+
+      if (maxLocalRenders <= 0) {
+        updatedShots.push(shot);
         continue;
       }
 
@@ -1450,7 +1472,7 @@ async function completeStoryboardFrameGeneration(
           shotId: shot.id,
           message: error instanceof Error ? error.message : "Unknown render failure"
         });
-        updatedShots.push(clearShotPreview(shot));
+        updatedShots.push(shot);
       }
     }
     updatedScenes.push({ ...scene, shots: updatedShots });
@@ -1636,16 +1658,26 @@ export async function syncStoryboardProduction(productionId: string) {
   return materializeProduction(pool, row, true);
 }
 
-export async function runStoryboardScheduler(): Promise<StoryboardPayload> {
+export async function runStoryboardScheduler(): Promise<{
+  ok: true;
+  generatedAt: string;
+  processed: Array<{ code: string; productionId: string; frameWorkPriority: number }>;
+}> {
   const { pool, workspaceId } = await getContext();
-  const rows = await listCandidateProductions(pool, workspaceId);
-  const batch = rows.slice(0, 4);
+  const rows = prioritizeStoryboardSchedulerRows(await listCandidateProductions(pool, workspaceId));
+  const batch = rows.slice(0, 1);
   await dispatchAssetEngineBatch(
     "storyboard",
     batch.map((row) => ({ id: row.ProductionId, title: row.Title, stage: row.Stage }))
   );
+  const processed: Array<{ code: string; productionId: string; frameWorkPriority: number }> = [];
   for (const row of batch) {
     await materializeProduction(pool, row, true);
+    processed.push({
+      code: row.Code,
+      productionId: row.ProductionId,
+      frameWorkPriority: scoreProductionFrameWorkPriority(row)
+    });
   }
-  return getStoryboardWorkspaceData();
+  return { ok: true, generatedAt: new Date().toISOString(), processed };
 }

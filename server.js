@@ -148,22 +148,45 @@ function onServerReady() {
   startAutonomousMusicScheduler();
 }
 
+const schedulerGuards = new Map();
+
+function createSchedulerGuard(name) {
+  if (schedulerGuards.has(name)) return schedulerGuards.get(name);
+  let running = false;
+  const guard = async (task) => {
+    if (running) {
+      console.warn(`${name}.scheduler.skipped`, { reason: "previous-run-in-flight" });
+      return;
+    }
+    running = true;
+    try {
+      await task();
+    } finally {
+      running = false;
+    }
+  };
+  schedulerGuards.set(name, guard);
+  return guard;
+}
+
 function startInternalEndpointScheduler(name, endpoint, intervalEnv, defaultIntervalMs, initialDelayMs) {
   if (dev || isNamedPipe) return;
   const intervalMs = Math.max(30_000, Number(process.env[intervalEnv] || defaultIntervalMs));
-  const run = async () => {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
-        body: JSON.stringify({ action: "scheduler" }),
-        signal: AbortSignal.timeout(55_000)
-      });
-      if (!response.ok) console.error(`${name}.scheduler.failed`, { status: response.status });
-    } catch (error) {
-      console.error(`${name}.scheduler.failed`, { name: error instanceof Error ? error.name : "Unknown" });
-    }
-  };
+  const guard = createSchedulerGuard(name);
+  const run = () =>
+    guard(async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
+          body: JSON.stringify({ action: "scheduler" }),
+          signal: AbortSignal.timeout(55_000)
+        });
+        if (!response.ok) console.error(`${name}.scheduler.failed`, { status: response.status });
+      } catch (error) {
+        console.error(`${name}.scheduler.failed`, { name: error instanceof Error ? error.name : "Unknown" });
+      }
+    });
   setTimeout(run, initialDelayMs).unref();
   setInterval(run, intervalMs).unref();
 }
@@ -171,19 +194,21 @@ function startInternalEndpointScheduler(name, endpoint, intervalEnv, defaultInte
 function startAutonomousScriptWritingScheduler() {
   if (dev || isNamedPipe) return;
   const intervalMs = Math.max(30_000, Number(process.env.CACSMS_SCRIPT_WRITING_INTERVAL_MS || 30_000));
-  const run = async () => {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/writing/script-editor`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
-        body: JSON.stringify({ action: "scheduler" }),
-        signal: AbortSignal.timeout(55_000)
-      });
-      if (!response.ok) console.error("script-writing.scheduler.failed", { status: response.status });
-    } catch (error) {
-      console.error("script-writing.scheduler.failed", { name: error instanceof Error ? error.name : "Unknown" });
-    }
-  };
+  const guard = createSchedulerGuard("script-writing");
+  const run = () =>
+    guard(async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/writing/script-editor`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
+          body: JSON.stringify({ action: "scheduler" }),
+          signal: AbortSignal.timeout(55_000)
+        });
+        if (!response.ok) console.error("script-writing.scheduler.failed", { status: response.status });
+      } catch (error) {
+        console.error("script-writing.scheduler.failed", { name: error instanceof Error ? error.name : "Unknown" });
+      }
+    });
   setTimeout(run, 35_000).unref();
   setInterval(run, intervalMs).unref();
 }
@@ -201,19 +226,21 @@ function startAutonomousStoryboardScheduler() {
 function startAutonomousImageGenerationScheduler() {
   if (dev || isNamedPipe) return;
   const intervalMs = Math.max(30_000, Number(process.env.CACSMS_IMAGE_GENERATION_INTERVAL_MS || 45_000));
-  const run = async () => {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/visuals/image-generator`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
-        body: JSON.stringify({ action: "scheduler" }),
-        signal: AbortSignal.timeout(55_000)
-      });
-      if (!response.ok) console.error("image-generation.scheduler.failed", { status: response.status });
-    } catch (error) {
-      console.error("image-generation.scheduler.failed", { name: error instanceof Error ? error.name : "Unknown" });
-    }
-  };
+  const guard = createSchedulerGuard("image-generation");
+  const run = () =>
+    guard(async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/visuals/image-generator`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN },
+          body: JSON.stringify({ action: "scheduler" }),
+          signal: AbortSignal.timeout(55_000)
+        });
+        if (!response.ok) console.error("image-generation.scheduler.failed", { status: response.status });
+      } catch (error) {
+        console.error("image-generation.scheduler.failed", { name: error instanceof Error ? error.name : "Unknown" });
+      }
+    });
   setTimeout(run, 39_000).unref();
   setInterval(run, intervalMs).unref();
 }
