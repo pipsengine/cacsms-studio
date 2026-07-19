@@ -293,12 +293,13 @@ def render_diffusion(prompt: str, output: Path, width: int, height: int, seed: s
     if len(prompt_head) > 620:
         prompt_head = prompt_head[:620].rsplit(" ", 1)[0]
     enhanced = (
-        "photorealistic documentary medium-wide corporate operations room scene, not close-up portrait, not studio portrait, "
-        "three Black Nigerian West African business professionals in a contemporary Lagos technology office, "
+        "photorealistic documentary wide-angle group scene in a Lagos Nigeria corporate AI operations room, "
+        "three Black Nigerian West African business professionals with natural dark-brown skin tones, "
         "clear foreground professional centered inside safe area, complete head and upper body visible, face not cropped, "
         "visible hands holding tablet or using workstation, analytics dashboards and maintenance workflow screens visible, "
         "clear unmasked natural human face, no robotic or cyborg features, no mask, no helmet, no visor, "
         "modern business suit, blazer, shirt or smart-casual corporate workwear, no ceremonial clothing unless explicitly requested, "
+        "medium-wide 28mm documentary camera from 10 feet away, visible headroom and side margins, "
         "moderate depth of field, readable business operations environment, not generic home office, not empty portrait background, "
         "contemporary Lagos Nigerian corporate technology workplace when locale is Nigeria, "
         "AI shown only as software dashboards on screens, not as facial or body features, "
@@ -309,7 +310,8 @@ def render_diffusion(prompt: str, output: Path, width: int, height: int, seed: s
         "extra fingers, watermark, logo, text, blurry, low quality, cropped face, cut off head, subject at edge, "
         "extreme close-up, excessive bokeh, cyborg, robot, mechanical face, cybernetic implant, sci-fi face, "
         "face mask, masked face, helmet, visor, mannequin, traditional costume, ceremonial attire, head wrap, "
-        "generic white woman portrait, generic western office portrait, single person closeup, empty background"
+        "white woman, caucasian woman, european woman, generic white woman portrait, generic western office portrait, "
+        "single person closeup, headshot, beauty portrait, passport photo, empty background, shallow bokeh portrait"
     )
     generator = torch.Generator(device="cpu").manual_seed(seed_to_int(seed))
     result = pipe(

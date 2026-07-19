@@ -85,7 +85,28 @@ def main() -> None:
     strong_skin_human_signal = skin_ratio >= 0.025 and skin_ratio <= 0.22 and len(skin_regions) >= 6
     h, w = gray.shape[:2]
     subject_box = None
-    if skin_boxes:
+    crop_check_box = None
+    face_boxes = list(faces) + list(profiles)
+    if face_boxes:
+        def focal_face_score(rect) -> float:
+            x, y, rw, rh = [int(value) for value in rect]
+            cx = (x + rw / 2) / max(1, w)
+            cy = (y + rh / 2) / max(1, h)
+            center_distance = abs(cx - 0.5) + abs(cy - 0.42)
+            area_bonus = float(rw * rh) / float(max(1, w * h))
+            return center_distance - area_bonus * 2.0
+
+        fx, fy, fw, fh = [int(value) for value in sorted(face_boxes, key=focal_face_score)[0]]
+        crop_check_box = (fx, fy, fw, fh)
+        cx = fx + fw / 2
+        expanded_w = max(fw * 3.2, w * 0.18)
+        expanded_h = max(fh * 4.8, h * 0.32)
+        left = max(0, int(cx - expanded_w / 2))
+        top = max(0, int(fy - fh * 0.45))
+        right = min(w, int(cx + expanded_w / 2))
+        bottom = min(h, int(top + expanded_h))
+        subject_box = (left, top, right - left, bottom - top)
+    elif skin_boxes:
         primary_boxes = sorted(skin_boxes, key=lambda item: item[4], reverse=True)[:4]
         left = min(item[0] for item in primary_boxes)
         top = min(item[1] for item in primary_boxes)
@@ -102,13 +123,14 @@ def main() -> None:
 
     if subject_box:
         sx, sy, sw, sh = subject_box
+        cx0, cy0, cw0, ch0 = crop_check_box or subject_box
         coverage = float(sw * sh) / float(max(1, w * h))
         cx = (sx + sw / 2) / max(1, w)
         cy = (sy + sh / 2) / max(1, h)
         center_offset = abs(cx - 0.5) + abs(cy - 0.48)
         margin = 0.08
-        safe_area_pass = sx > w * margin and sy > h * margin and (sx + sw) < w * (1 - margin) and (sy + sh) < h * (1 - margin)
-        cropped_risk = sx <= w * 0.025 or sy <= h * 0.025 or (sx + sw) >= w * 0.975 or (sy + sh) >= h * 0.975
+        safe_area_pass = cx0 > w * margin and cy0 > h * margin and (cx0 + cw0) < w * (1 - margin) and (cy0 + ch0) < h * (1 - margin)
+        cropped_risk = cx0 <= w * 0.025 or cy0 <= h * 0.025 or (cx0 + cw0) >= w * 0.975 or (cy0 + ch0) >= h * 0.975
     else:
         coverage = 0.0
         center_offset = 1.0
@@ -125,6 +147,30 @@ def main() -> None:
     metal_blue = cv2.inRange(hsv, np.array((85, 45, 45), dtype=np.uint8), np.array((135, 255, 255), dtype=np.uint8))
     metal_blue_ratio = float(cv2.countNonZero(metal_blue)) / float(max(1, w * h))
     robotic_feature_risk = metal_blue_ratio > 0.18 and skin_ratio < 0.075
+    regional_text = args.prompt.lower()
+    requires_black_west_african = any(
+        marker in regional_text
+        for marker in (
+            "black nigerian",
+            "west african",
+            "dark-brown skin",
+            "dark brown skin",
+            "nigerian professionals",
+        )
+    )
+    skin_luma_values = []
+    appearance_regions = faces or profiles or ([subject_box] if subject_box else [])
+    for rect in appearance_regions[:4]:
+        x, y, rw, rh = [int(value) for value in rect]
+        roi_mask = skin_mask[max(0, y): min(skin_mask.shape[0], y + rh), max(0, x): min(skin_mask.shape[1], x + rw)]
+        roi_gray = gray[max(0, y): min(gray.shape[0], y + rh), max(0, x): min(gray.shape[1], x + rw)]
+        if roi_mask.size and cv2.countNonZero(roi_mask) >= 24:
+            skin_luma_values.extend(roi_gray[roi_mask > 0].astype(float).tolist())
+    average_skin_luma = float(np.mean(skin_luma_values)) if skin_luma_values else None
+    regional_appearance_pass = (
+        not requires_black_west_african
+        or (average_skin_luma is not None and average_skin_luma <= 165 and face_count >= 1)
+    )
     human_signal = min(1.0, face_count * 0.52 + body_count * 0.34 + min(len(skin_regions), 4) * 0.08 + min(skin_ratio, 0.05) * 2.0)
     empty_signal = max(0.0, 1.0 - human_signal)
     scores = {
@@ -164,6 +210,8 @@ def main() -> None:
             "skinRegions": len(skin_regions),
             "skinRatio": skin_ratio,
             "strongSkinHumanSignal": strong_skin_human_signal,
+            "requiresBlackWestAfrican": requires_black_west_african,
+            "averageSkinLuma": average_skin_luma,
         },
         "composition": {
             "subjectBox": list(subject_box) if subject_box else None,
@@ -185,6 +233,7 @@ def main() -> None:
         "passedAnatomyRisk": (face_count >= 1 and scores["low_quality_humans"] < 0.34) or strong_skin_human_signal,
         "passedComposition": composition_pass,
         "passedNaturalHuman": not robotic_feature_risk,
+        "passedRegionalAppearance": regional_appearance_pass,
     }
     print(json.dumps(result, separators=(",", ":")))
 

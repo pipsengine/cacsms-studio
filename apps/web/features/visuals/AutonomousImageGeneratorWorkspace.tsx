@@ -580,14 +580,15 @@ export function AutonomousImageGeneratorWorkspace({
   const productions = useMemo(() => {
     return [...(data?.productions ?? [])].sort((left, right) => {
       const score = (item: ImageGeneratorProduction) => {
-        if (item.state === "Failed" || item.state === "Rejected") return 5;
-        if (item.state === "Blocked") return 4;
-        if (["Reviewing", "Revising", "Validating"].includes(item.state)) return 3;
-        if (["Generating", "Uploading", "Persisting"].includes(item.state)) return 2;
-        if (item.state === "Completed") return 0;
-        return 1;
+        if (["Reviewing", "Revising", "Validating", "Generating", "Uploading", "Persisting"].includes(item.state)) return 0;
+        if (item.state === "Completed") return 1;
+        if (item.state === "Queued" || item.state === "Waiting for Inputs") return 2;
+        if (item.state === "Blocked") return 3;
+        if (item.state === "Rejected") return 4;
+        if (item.state === "Failed") return 5;
+        return 6;
       };
-      const delta = score(right) - score(left);
+      const delta = score(left) - score(right);
       if (delta !== 0) return delta;
       return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
     });

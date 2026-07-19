@@ -245,6 +245,11 @@ function asNumber(value: unknown, fallback: number, min = 0, max = 100) {
   return Number.isFinite(number) ? clamp(number, min, max) : fallback;
 }
 
+function asFraction(value: unknown, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : fallback;
+}
+
 function titleCase(value: string) {
   return value
     .replaceAll("-", " ")
@@ -596,9 +601,10 @@ function buildPhotorealPrompt(brief: VisualBrief, row: ProductionRow, variantNum
     ? "For Lagos corporate scenes, show Black Nigerian and West African business professionals in contemporary office/workwear; do not default to traditional, ceremonial, religious or festival clothing unless the persisted scene brief explicitly requires it."
     : "Use contemporary professional clothing appropriate to the resolved locale unless the persisted scene brief explicitly requires traditional or ceremonial attire.";
   return [
-    "Photorealistic documentary photograph, medium-wide corporate operations-room scene, not a close-up portrait, not a studio portrait, not a beauty shot.",
-    "Show three adult business professionals, including one clear foreground Black Nigerian or West African professional fully inside the 10 percent safe area, complete head and upper body visible, visible hands using a laptop, tablet, control console or workstation.",
-    "The foreground person is the unmistakable focal subject but the surrounding AI operations room must remain readable: analytics screens, maintenance workflow dashboard, desks, glass partitions, and modern enterprise equipment.",
+    "Photorealistic documentary photograph of a Lagos Nigeria corporate AI operations room, wide-angle group scene, not a close-up portrait, not a studio portrait, not a beauty shot.",
+    "Show three Black Nigerian or West African adult business professionals with natural dark-brown skin tones, contemporary corporate clothing, and credible enterprise roles.",
+    "One clear foreground professional is fully inside the 10 percent safe area, with complete head and upper body visible, visible hands using a laptop, tablet, control console or workstation.",
+    "The surrounding AI operations room must remain readable: analytics screens, maintenance workflow dashboard, desks, glass partitions, and modern enterprise equipment.",
     "Use natural expression, original synthetic identity, no celebrity likeness, no known-person imitation, believable eye detail, skin texture, hair, clothing folds, and accurate body proportions.",
     "If the production mentions AI agents, render natural human operators using AI software dashboards; the AI must appear only as screen interfaces, analytics panels or workflow tools, never as robotic/cybernetic facial or body features.",
     "Composition must not crop the face, head, hands or upper body; keep every face away from extreme frame edges, leave breathing room above the head, reduce background blur, show a clear environment and action.",
@@ -613,6 +619,16 @@ function buildPhotorealPrompt(brief: VisualBrief, row: ProductionRow, variantNum
     "Lighting: soft directional key light, practical screen glow, natural shadows, consistent perspective and reflections.",
     `Mood and brand: ${brief.brandProfile}, credible enterprise environment, polished but not artificial.`,
     `Aspect ratio: ${brief.aspectRatio}. Variant ${variantNumber}, revision ${retryCount}.`
+  ].join(" ");
+}
+
+function buildRevisionPrompt(brief: VisualBrief, row: ProductionRow, variantNumber: number, retryCount: number, defects: string) {
+  const base = buildPhotorealPrompt(brief, row, variantNumber, retryCount);
+  return [
+    base,
+    "Mandatory retry correction: use a wider camera distance, leave clear headroom and side margins, keep every face fully visible, keep the operations-room background sharp enough to read, and show the Lagos/Nigerian corporate context clearly.",
+    "Do not create a single-person office portrait. Do not create a white European corporate portrait. Do not create a generic home office or empty office background.",
+    `Rejected defects to correct in plain terms: ${defects.slice(0, 600)}`
   ].join(" ");
 }
 
@@ -751,13 +767,14 @@ type SemanticImageEvidence = {
   passedAnatomyRisk: boolean;
   passedComposition: boolean;
   passedNaturalHuman: boolean;
+  passedRegionalAppearance: boolean;
   error: string | null;
 };
 
 function localSemanticImageEvidence(storagePath: string, prompt: string): SemanticImageEvidence {
   const command = process.env.CACSMS_LOCAL_IMAGE_VALIDATOR_COMMAND?.trim() || process.env.CACSMS_LOCAL_IMAGE_RENDER_COMMAND?.trim();
   if (!command) {
-    return { available: false, model: null, scores: {}, detectors: {}, composition: {}, passedHumanPresence: false, passedPhotographicStyle: false, passedAnatomyRisk: false, passedComposition: false, passedNaturalHuman: false, error: "No local semantic image validator command is configured." };
+    return { available: false, model: null, scores: {}, detectors: {}, composition: {}, passedHumanPresence: false, passedPhotographicStyle: false, passedAnatomyRisk: false, passedComposition: false, passedNaturalHuman: false, passedRegionalAppearance: false, error: "No local semantic image validator command is configured." };
   }
   const validatorScript =
     process.env.CACSMS_LOCAL_IMAGE_VALIDATOR_SCRIPT?.trim() ||
@@ -785,6 +802,7 @@ function localSemanticImageEvidence(storagePath: string, prompt: string): Semant
       passedAnatomyRisk: Boolean(parsed.passedAnatomyRisk),
       passedComposition: Boolean(parsed.passedComposition),
       passedNaturalHuman: parsed.passedNaturalHuman !== false,
+      passedRegionalAppearance: parsed.passedRegionalAppearance !== false,
       error: null
     };
   } catch (error) {
@@ -799,6 +817,7 @@ function localSemanticImageEvidence(storagePath: string, prompt: string): Semant
       passedAnatomyRisk: false,
       passedComposition: false,
       passedNaturalHuman: false,
+      passedRegionalAppearance: false,
       error: error instanceof Error ? error.message : String(error)
     };
   }
@@ -815,12 +834,12 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
     : { skinPixelRatio: 1, skinPixels: 0, sampledPixels: 0, supported: false };
   const semanticEvidence = instructions.mode.mode === "photoreal-human"
     ? localSemanticImageEvidence(asset.StoragePath, instructions.prompt)
-    : { available: true, model: null, scores: {}, detectors: {}, composition: {}, passedHumanPresence: true, passedPhotographicStyle: true, passedAnatomyRisk: true, passedComposition: true, passedNaturalHuman: true, error: null };
+    : { available: true, model: null, scores: {}, detectors: {}, composition: {}, passedHumanPresence: true, passedPhotographicStyle: true, passedAnatomyRisk: true, passedComposition: true, passedNaturalHuman: true, passedRegionalAppearance: true, error: null };
   const hasVisibleHumanEvidence = semanticEvidence.passedHumanPresence && humanEvidence.skinPixelRatio >= 0.0035;
   const compositionEvidence = semanticEvidence.composition;
-  const subjectCoverage = asNumber(compositionEvidence.subjectCoverage, 0);
-  const centerOffset = asNumber(compositionEvidence.centerOffset, 1);
-  const blurScore = asNumber(compositionEvidence.blurScore, 0);
+  const subjectCoverage = asFraction(compositionEvidence.subjectCoverage, 0);
+  const centerOffset = asFraction(compositionEvidence.centerOffset, 1);
+  const blurScore = asFraction(compositionEvidence.blurScore, 0);
   const safeAreaPass = compositionEvidence.safeAreaPass === true;
   const croppedRisk = compositionEvidence.croppedRisk === true;
   const roboticFeatureRisk = compositionEvidence.roboticFeatureRisk === true || !semanticEvidence.passedNaturalHuman;
@@ -831,7 +850,10 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   const hasLocalePrompt = !locale || [locale.country, locale.city, locale.environment].every((value) => promptText.includes(value.toLowerCase()));
   const isNigeria = locale?.country.toLowerCase() === "nigeria";
   const nigeriaPromptOk = !isNigeria || /nigerian|lagos|abuja|victoria island|naira|west african|english \(nigeria\)/i.test(instructions.prompt);
-  const stereotypeAvoidanceOk = !isNigeria || !/(safari|desert|tribal|hut|poverty|slum|traditional costume by default)/i.test(instructions.prompt);
+  const stereotypeAvoidanceOk =
+    !isNigeria ||
+    /avoid stereotypes|avoid.*poverty|do not default|no foreign signage|no non-nigerian/i.test(instructions.prompt) ||
+    !/(safari|desert|tribal|hut|poverty|slum|traditional costume by default)/i.test(instructions.prompt);
   const quality: VisualQuality = {
     brief: 94,
     humanPhotorealism: productionPhotoreal && hasVisibleHumanEvidence ? 93 : productionPhotoreal ? 62 : 18,
@@ -843,7 +865,7 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
     subjectVisibility: semanticEvidence.passedComposition && subjectCoverage >= 0.08 && !croppedRisk ? 91 : subjectCoverage > 0 ? 48 : 20,
     identityConsistency: semanticEvidence.passedComposition && !roboticFeatureRisk ? 88 : 52,
     geographicAccuracy: hasLocalePrompt && nigeriaPromptOk ? 90 : 55,
-    culturalIntegrity: hasLocalePrompt && stereotypeAvoidanceOk ? 91 : 50,
+    culturalIntegrity: hasLocalePrompt && stereotypeAvoidanceOk && semanticEvidence.passedRegionalAppearance ? 91 : 50,
     brand: 92,
     composition: semanticEvidence.passedComposition ? 91 : Math.max(20, Math.round(88 - centerOffset * 55 - (croppedRisk ? 22 : 0) - (safeAreaPass ? 0 : 16) - (blurScore < 0.34 ? 18 : 0))),
     technical: loaded && hasRealSize ? Math.min(98, 84 + Math.round(Math.min(asset.FileSizeBytes / 3000, 14))) : 54,
@@ -893,6 +915,9 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   }
   if (roboticFeatureRisk) {
     defects.unshift("Natural-human consistency failed: unexpected robotic/cybernetic feature risk detected.");
+  }
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !semanticEvidence.passedRegionalAppearance) {
+    defects.unshift("Regional appearance failed: generated people do not match the required Nigerian/West African demographic profile in the visual brief.");
   }
   if (locale && (!hasLocalePrompt || !nigeriaPromptOk)) {
     defects.unshift(`Regional prompt failed: locale profile ${localeText} was not sufficiently represented in generation instructions.`);
@@ -1454,8 +1479,58 @@ function versionsFor(variants: (VariantRow & Partial<AssetRow>)[]) {
   }));
 }
 
+function activeVariantPriority(jobState: ImageGenerationState, variant: VariantRow & Partial<AssetRow>) {
+  const priorityByState: Partial<Record<ImageGenerationState, number>> =
+    jobState === "Completed"
+      ? { Completed: 0, Reviewing: 10, Validating: 20, Persisting: 30, Uploading: 40, Generating: 50, Queued: 60, Revising: 70 }
+      : jobState === "Reviewing"
+        ? { Reviewing: 0, Validating: 10, Persisting: 20, Uploading: 30, Generating: 40, Queued: 50, Revising: 60, Completed: 70 }
+        : jobState === "Validating"
+          ? { Validating: 0, Persisting: 10, Uploading: 20, Generating: 30, Reviewing: 40, Queued: 50, Revising: 60, Completed: 70 }
+          : jobState === "Persisting"
+            ? { Persisting: 0, Uploading: 10, Generating: 20, Validating: 30, Queued: 40, Revising: 50, Reviewing: 60, Completed: 70 }
+            : jobState === "Uploading"
+              ? { Uploading: 0, Generating: 10, Persisting: 20, Queued: 30, Revising: 40, Validating: 50, Reviewing: 60, Completed: 70 }
+              : jobState === "Generating"
+                ? { Generating: 0, Queued: 10, Uploading: 20, Persisting: 30, Revising: 40, Validating: 50, Reviewing: 60, Completed: 70 }
+                : jobState === "Revising" || jobState === "Queued"
+                  ? { Queued: 0, Revising: 10, Generating: 20, Uploading: 30, Persisting: 40, Validating: 50, Reviewing: 60, Completed: 70 }
+                  : {};
+  const statePriority = priorityByState[variant.State] ?? (variant.State === "Rejected" || variant.State === "Failed" || variant.State === "Blocked" ? 900 : 800);
+  const assetBonus = variant.ImageGenerationAssetId ? -1 : 0;
+  return statePriority + assetBonus;
+}
+
+function selectActiveVariant(
+  job: JobRow | null,
+  variants: (VariantRow & Partial<AssetRow>)[]
+): (VariantRow & Partial<AssetRow>) | null {
+  if (!variants.length) return null;
+  const jobState = job?.State ?? "Queued";
+  return [...variants].sort((left, right) => {
+    const priorityDiff = activeVariantPriority(jobState, left) - activeVariantPriority(jobState, right);
+    if (priorityDiff !== 0) return priorityDiff;
+    return right.VariantNumber - left.VariantNumber;
+  })[0];
+}
+
+function schedulerJobPriority(job: JobRow | null) {
+  if (!job) return 60;
+  const priorities: Partial<Record<ImageGenerationState, number>> = {
+    Reviewing: 0,
+    Validating: 10,
+    Persisting: 20,
+    Uploading: 30,
+    Generating: 40,
+    Revising: 50,
+    Queued: 60,
+    "Waiting for Inputs": 70
+  };
+  return priorities[job.State] ?? 999;
+}
+
 function mapProductionRecord(row: ProductionRow, brief: ReturnType<typeof briefFromRow>, job: JobRow | null, variants: (VariantRow & Partial<AssetRow>)[]): ImageGeneratorProduction {
-  const activeVariant = variants[0] ?? null;
+  const activeVariant = selectActiveVariant(job, variants);
   const activeAsset = activeVariant?.ImageGenerationAssetId
     ? {
         ImageGenerationAssetId: activeVariant.ImageGenerationAssetId,
@@ -1608,19 +1683,27 @@ export async function runImageGenerationScheduler(): Promise<ImageGeneratorPaylo
 async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload> {
   const { pool, workspaceId } = await workspace();
   const candidates = await listCandidateProductions(pool, workspaceId);
-  let row: ProductionRow | undefined;
-  let selectedJob: JobRow | null = null;
-  let selectedVariants: (VariantRow & Partial<AssetRow>)[] = [];
+  const activeCandidates: {
+    row: ProductionRow;
+    job: JobRow | null;
+    variants: (VariantRow & Partial<AssetRow>)[];
+  }[] = [];
   for (const candidate of candidates) {
     const job = await latestJob(pool, candidate.ProductionId);
     const variants = await productionVariants(pool, candidate.ProductionId);
     if (!job || ["Queued", "Generating", "Uploading", "Persisting", "Validating", "Reviewing", "Revising"].includes(job.State)) {
-      row = candidate;
-      selectedJob = job;
-      selectedVariants = variants;
-      break;
+      activeCandidates.push({ row: candidate, job, variants });
     }
   }
+  activeCandidates.sort((left, right) => {
+    const priorityDiff = schedulerJobPriority(left.job) - schedulerJobPriority(right.job);
+    if (priorityDiff !== 0) return priorityDiff;
+    return new Date(right.job?.UpdatedAt ?? right.row.UpdatedAt).getTime() - new Date(left.job?.UpdatedAt ?? left.row.UpdatedAt).getTime();
+  });
+  const selected = activeCandidates[0];
+  const row = selected?.row;
+  const selectedJob = selected?.job ?? null;
+  const selectedVariants = selected?.variants ?? [];
   if (!row) return getImageGeneratorData();
 
   const { metadata, brief, valid, reason } = ensureVisualBriefMetadata(row);
@@ -1650,7 +1733,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   }
 
   if (job.State === "Reviewing") {
-    const activeVariant = variants[0];
+    const activeVariant = selectActiveVariant(job, variants);
     if (!activeVariant?.ImageGenerationAssetId) {
       await patchJob(pool, job.ImageGenerationJobId, {
         state: "Failed",
@@ -1756,12 +1839,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       storageResult: `Rejected asset ${asset.ImageGenerationAssetId}; revision requested.`,
       modelResponse: JSON.stringify({ ...parseJsonObject(job.ModelResponseJson), review: { quality: gate.quality, score: gate.score, passed: false, defects: gate.defects, audit: gate.audit } })
     });
-    const revisedPrompt = [
-      buildPhotorealPrompt(brief, row, Math.max(...variants.map((item) => item.VariantNumber)) + 1, nextRetry),
-      "Revision instructions: correct all rejected defects; enforce natural photographic adults, realistic skin texture, unique faces, accurate hands, grounded shadows, natural camera perspective, high-resolution environment detail.",
-      `Rejected defects to correct: ${defectSummary}`,
-      `Negative prompt: ${reviewInstructions.negativePrompt}`
-    ].join(" ");
+    const revisedPrompt = buildRevisionPrompt(brief, row, Math.max(...variants.map((item) => item.VariantNumber)) + 1, nextRetry, defectSummary);
     await createVariant(pool, row.ProductionId, job.ImageGenerationJobId, Math.max(...variants.map((item) => item.VariantNumber)) + 1, revisedPrompt, "Queued", nextRetry);
     await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Revising"));
     return getImageGeneratorData();
@@ -1771,7 +1849,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     return getImageGeneratorData();
   }
 
-  const activeVariant = variants[0] ?? {
+  const activeVariant = selectActiveVariant(job, variants) ?? {
     ImageGenerationVariantId: await createVariant(pool, row.ProductionId, job.ImageGenerationJobId, 1, buildRenderInstructions(brief, row, dimensionsFromAspectRatio(brief.aspectRatio).width, dimensionsFromAspectRatio(brief.aspectRatio).height, job.ImageGenerationJobId, 1, job.RetryCount).prompt, "Queued", job.RetryCount),
     VariantNumber: 1,
     RenderPrompt: buildRenderInstructions(brief, row, dimensionsFromAspectRatio(brief.aspectRatio).width, dimensionsFromAspectRatio(brief.aspectRatio).height, job.ImageGenerationJobId, 1, job.RetryCount).prompt
@@ -1857,12 +1935,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       return getImageGeneratorData();
     }
     const nextVariantNumber = Math.max(...variants.map((item) => item.VariantNumber), activeVariant.VariantNumber) + 1;
-    const revisedPrompt = [
-      buildPhotorealPrompt(brief, row, nextVariantNumber, nextRetry),
-      "Revision instructions: reduce composition complexity if needed, keep one to three natural adult human subjects, enforce photographic lighting, realistic facial features, accurate hands, and grounded environmental shadows.",
-      `Rejected defects to correct: ${defectSummary}`,
-      `Negative prompt: ${instructions.negativePrompt}`
-    ].join(" ");
+    const revisedPrompt = buildRevisionPrompt(brief, row, nextVariantNumber, nextRetry, defectSummary);
     await createVariant(pool, row.ProductionId, job.ImageGenerationJobId, nextVariantNumber, revisedPrompt, "Queued", nextRetry);
     await patchJob(pool, job.ImageGenerationJobId, {
       state: "Revising",
