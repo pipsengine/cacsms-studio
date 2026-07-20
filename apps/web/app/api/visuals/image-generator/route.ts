@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import fs from "node:fs";
 import { requireMutationAccess } from "@/app/api/_utils/write-access";
 import {
   acknowledgeImageAssetLoad,
@@ -9,6 +10,23 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// #region debug-point B:image-route-report
+function reportImageRouteDebug(hypothesisId: "A" | "B" | "C" | "D" | "E", location: string, msg: string, data: Record<string, unknown>) {
+  let url = "http://127.0.0.1:7777/event";
+  let sessionId = "image-gen-stall";
+  try {
+    const env = fs.readFileSync(".dbg/image-gen-stall.env", "utf8");
+    url = env.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || url;
+    sessionId = env.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || sessionId;
+  } catch {}
+  void fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, runId: "pre-fix", hypothesisId, location, msg: `[DEBUG] ${msg}`, data, ts: Date.now() })
+  }).catch(() => {});
+}
+// #endregion
 
 export async function GET() {
   try {
@@ -25,7 +43,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const denied = await requireMutationAccess(request);
+  // #region debug-point B:mutation-access
+  reportImageRouteDebug("B", "api/visuals/image-generator/route.ts:POST", "image-generator POST entry", {
+    denied: Boolean(denied),
+    hasInternalHeader: Boolean(request.headers.get("x-cacsms-internal")),
+    contentType: request.headers.get("content-type") || null
+  });
+  // #endregion
   if (denied) {
+    // #region debug-point B:mutation-denied
+    reportImageRouteDebug("B", "api/visuals/image-generator/route.ts:POST", "mutation access denied", {});
+    // #endregion
     return denied;
   }
 
@@ -37,6 +65,15 @@ export async function POST(request: Request) {
       variantId?: string;
       reason?: string;
     };
+
+    // #region debug-point B:route-body
+    reportImageRouteDebug("B", "api/visuals/image-generator/route.ts:POST", "image-generator action parsed", {
+      action: body.action ?? null,
+      productionId: body.productionId ?? null,
+      assetId: body.assetId ?? null,
+      variantId: body.variantId ?? null
+    });
+    // #endregion
 
     if (body.action === "scheduler") {
       return NextResponse.json(await runImageGenerationScheduler(), {
@@ -74,6 +111,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ message: "Unsupported image generator action." }, { status: 400 });
   } catch (error) {
+    // #region debug-point B:route-error
+    reportImageRouteDebug("B", "api/visuals/image-generator/route.ts:POST", "image-generator route threw", {
+      error: error instanceof Error ? error.message : "unknown-error"
+    });
+    // #endregion
     return NextResponse.json({ message: error instanceof Error ? error.message : "Image generation automation could not be completed." }, {
       status: 500
     });

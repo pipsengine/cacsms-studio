@@ -1344,12 +1344,14 @@ async function loadProductionPhotorealImageAssets(pool: sql.ConnectionPool, prod
       FileName: string;
       ChecksumSha256: string;
       VariantNumber: number;
+      QualityScore: number | null;
     }>(`
       SELECT
         CONVERT(nvarchar(36), a.ImageGenerationAssetId) AS ImageGenerationAssetId,
         a.FileName,
         a.ChecksumSha256,
-        v.VariantNumber
+        v.VariantNumber,
+        CONVERT(float, v.QualityScore) AS QualityScore
       FROM cacsms.ImageGenerationVariants v
       INNER JOIN cacsms.ImageGenerationAssets a ON a.ImageGenerationAssetId = v.ImageGenerationAssetId
       WHERE CONVERT(nvarchar(36), v.ProductionId) = @productionId
@@ -1357,7 +1359,7 @@ async function loadProductionPhotorealImageAssets(pool: sql.ConnectionPool, prod
         AND v.State = N'Completed'
         AND a.BrowserLoadStatus = N'loaded'
         AND ISNULL(v.QualityScore, 0) >= 82
-      ORDER BY v.VariantNumber ASC, v.UpdatedAt DESC;
+      ORDER BY ISNULL(v.QualityScore, 0) DESC, v.UpdatedAt DESC, v.VariantNumber ASC;
     `);
     const seen = new Set<string>();
     const assets: PhotorealImageAsset[] = [];

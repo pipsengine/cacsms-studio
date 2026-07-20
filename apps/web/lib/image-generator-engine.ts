@@ -9,13 +9,20 @@ import {
   createVisualAssetUrl,
   getCompletedVariantIntegrityErrors,
   stateToProgress,
+  validateTechnicalImageBytes,
   validateServedImageResponse,
   type BrowserLoadStatus,
-  type ImageGenerationState
+  type ImageGenerationState,
+  type TechnicalImageValidation
 } from "@/lib/image-generator-integrity";
-import { generatePromptPng, readPngDimensions } from "@/lib/image-generator-png";
-import { renderWithLocalImageModel, type LocalImageModelRender, localImageRenderTimeoutMs, terminateOrphanedLocalImageRenders } from "@/lib/local-image-model-runtime";
+import { readPngDimensions } from "@/lib/image-generator-png";
+import { localImageRenderTimeoutMs, terminateOrphanedLocalImageRenders } from "@/lib/local-image-model-runtime";
 import { buildPhotorealStoryboardPrompt } from "@/lib/local-storyboard-frame-renderer";
+import {
+  getVisualGenerationProvider,
+  getVisualGenerationProviderDefaults,
+  type ImageGenerationProviderHealth
+} from "@/lib/visual-generation-provider";
 import { dispatchAssetEngineJob } from "@/lib/worker-dispatch";
 
 const VISUAL_STEPS = [
@@ -26,6 +33,23 @@ const VISUAL_STEPS = [
   "Auto-revision",
   "Asset approved"
 ] as const;
+
+// #region debug-point A:image-engine-report
+function reportImageEngineDebug(hypothesisId: "A" | "B" | "C" | "D" | "E", location: string, msg: string, data: Record<string, unknown>) {
+  let url = "http://127.0.0.1:7777/event";
+  let sessionId = "image-gen-stall";
+  try {
+    const env = fs.readFileSync(".dbg/image-gen-stall.env", "utf8");
+    url = env.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || url;
+    sessionId = env.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || sessionId;
+  } catch {}
+  void fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, runId: "pre-fix", hypothesisId, location, msg: `[DEBUG] ${msg}`, data, ts: Date.now() })
+  }).catch(() => {});
+}
+// #endregion
 
 type ProductionRow = {
   ProductionId: string;
@@ -310,20 +334,22 @@ const WORKFLOW_STEPS = [
 ] as const;
 
 const DEFAULT_WORKER = "CACSMS Image Worker";
-const DEFAULT_PROVIDER = "cacsms-autonomous-procedural-visual-engine";
-const DEFAULT_MODEL = "CACSMS Original Human/3D Scene Renderer v2";
 const PHOTO_REAL_PROVIDER = "cacsms-local-neural-image-runtime";
+const CLAIM_LEASE_SECONDS = Math.max(30, Number.parseInt(process.env.CACSMS_IMAGE_CLAIM_LEASE_SECONDS ?? "120", 10) || 120);
 
 function configuredNeuralImageModel() {
-  return process.env.CACSMS_LOCAL_IMAGE_MODEL_NAME?.trim() || "CACSMS Local Photoreal Human Model";
+  return (
+    process.env.CACSMS_LOCAL_IMAGE_MODEL_NAME?.trim() ||
+    getVisualGenerationProviderDefaults().modelDisplayName
+  );
 }
 
 function defaultJobRuntime() {
-  const hasDiffusion = Boolean(process.env.CACSMS_LOCAL_IMAGE_MODEL_ID?.trim());
+  const defaults = getVisualGenerationProviderDefaults();
   return {
     worker: DEFAULT_WORKER,
-    provider: hasDiffusion ? PHOTO_REAL_PROVIDER : DEFAULT_PROVIDER,
-    model: hasDiffusion ? configuredNeuralImageModel() : DEFAULT_MODEL
+    provider: defaults.providerId,
+    model: defaults.modelDisplayName
   };
 }
 
@@ -391,22 +417,14 @@ const PHOTOREAL_HUMAN_NEGATIVE_PROMPT = [
   "blur"
 ].join(", ");
 
-function renderProceduralFallback(prompt: string, width: number, height: number): LocalImageModelRender {
-  return {
-    ...generatePromptPng(prompt, width, height),
-    provider: DEFAULT_PROVIDER,
-    model: DEFAULT_MODEL,
-    method: "prompt-seeded layered raster synthesis"
-  };
-}
-
 async function renderIndependentVisual(prompt: string, width: number, height: number, seed: string, allowFallback: boolean) {
-  const local = await renderWithLocalImageModel({ prompt, width, height, seed }).catch((error) => {
-    console.warn("cacsms.localImageModel.failed", error);
+  const provider = getVisualGenerationProvider();
+  try {
+    return await provider.generate({ prompt, width, height, seed });
+  } catch (error) {
+    console.warn("cacsms.visualGenerationProvider.failed", error);
     return null;
-  });
-  if (local) return local;
-  return allowFallback ? renderProceduralFallback(prompt, width, height) : null;
+  }
 }
 const MAX_RETRIES = 5;
 const MIN_QUALITY_SCORE = 85;
@@ -420,6 +438,8 @@ const MAX_VARIANT_CAP = Math.max(
 );
 
 type StoryboardSnapshot = {
+  generatedAt: string;
+  versionLabel?: string;
   scenes: Array<{
     id: string;
     title: string;
@@ -449,6 +469,133 @@ function storyboardShotCount(metadata: Record<string, unknown>) {
 
 function targetVisualAssetCount(metadata: Record<string, unknown>) {
   return Math.max(TARGET_VARIANT_COUNT, Math.min(storyboardShotCount(metadata), MAX_VARIANT_CAP));
+}
+
+type StoryboardRequestContext = {
+  sceneId: string | null;
+  shotId: string | null;
+  sceneTitle: string | null;
+  shotTitle: string | null;
+  storyboardVersionLabel: string | null;
+  targetAssetCount: number;
+  routedAssetId: string | null;
+};
+
+function currentStoryboardRequestContext(
+  brief: VisualBrief,
+  metadata: Record<string, unknown>
+): StoryboardRequestContext {
+  const snapshot = storyboardSnapshotFromMetadata(metadata);
+  const visualGeneration = asObject(metadata.visualGeneration);
+  const persistedBrief = asObject(visualGeneration.brief);
+  const references = asStringList(persistedBrief.references, brief.references);
+  const referenceSceneId = references[1] ?? null;
+  const referenceShotId = references[2] ?? null;
+  const activeScene =
+    snapshot?.scenes.find((scene) => scene.id === asOptionalString(asObject(metadata.autonomousStoryboardProduction).activeSceneId)) ??
+    snapshot?.scenes.find((scene) => scene.id === referenceSceneId) ??
+    snapshot?.scenes.find((scene) => scene.title === brief.scene) ??
+    snapshot?.scenes[0] ??
+    null;
+  const activeShot =
+    activeScene?.shots.find((shot) => shot.id === asOptionalString(asObject(metadata.autonomousStoryboardProduction).activeShotId)) ??
+    activeScene?.shots.find((shot) => shot.id === referenceShotId) ??
+    activeScene?.shots.find((shot) => shot.visualFocus === brief.subject) ??
+    activeScene?.shots[0] ??
+    null;
+  return {
+    sceneId: activeScene?.id ?? referenceSceneId,
+    shotId: activeShot?.id ?? referenceShotId,
+    sceneTitle: activeScene?.title ?? brief.scene ?? null,
+    shotTitle: activeShot?.title ?? null,
+    storyboardVersionLabel: snapshot?.versionLabel ?? null,
+    targetAssetCount: targetVisualAssetCount(metadata),
+    routedAssetId: asOptionalString(asObject(visualGeneration.approvedAsset).assetId)
+  };
+}
+
+async function routeApprovedAsset(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  metadata: Record<string, unknown>,
+  brief: VisualBrief,
+  requestId: string,
+  variant: VariantRow & Partial<AssetRow>,
+  asset: AssetRow
+) {
+  const routedAt = new Date().toISOString();
+  const snapshot = storyboardSnapshotFromMetadata(metadata);
+  const context = currentStoryboardRequestContext(brief, metadata);
+  let routedSceneId = context.sceneId;
+  let routedShotId = context.shotId;
+  let routedSnapshot = snapshot;
+
+  if (snapshot?.scenes.length) {
+    const scenes = snapshot.scenes.map((scene) => {
+      if (routedSceneId && scene.id !== routedSceneId) return scene;
+      const shots = scene.shots.map((shot) => {
+        if (routedShotId && shot.id !== routedShotId) return shot;
+        if (!routedShotId && shot.previewAssetId) return shot;
+        routedSceneId = scene.id;
+        routedShotId = shot.id;
+        return {
+          ...shot,
+          previewAssetId: asset.ImageGenerationAssetId,
+          previewUrl: asset.PublicUrl,
+          previewFileName: asset.FileName,
+          previewChecksumSha256: asset.ChecksumSha256,
+          previewRenderMode: "photoreal-human" as const,
+          previewSource: "image-generator" as const
+        };
+      });
+      return { ...scene, shots };
+    });
+    routedSnapshot = { ...snapshot, generatedAt: routedAt, scenes };
+  }
+
+  const visualGeneration = asObject(metadata.visualGeneration);
+  const merged = {
+    ...metadata,
+    ...(routedSnapshot ? { autonomousStoryboard: routedSnapshot } : {}),
+    visualGeneration: {
+      ...visualGeneration,
+      approvedAsset: {
+        assetId: asset.ImageGenerationAssetId,
+        assetUrl: asset.PublicUrl,
+        checksumSha256: asset.ChecksumSha256,
+        variantId: variant.ImageGenerationVariantId,
+        variantNumber: variant.VariantNumber,
+        qualityScore: variant.QualityScore ?? null,
+        storyboardSceneId: routedSceneId,
+        storyboardShotId: routedShotId,
+        storyboardVersionLabel: context.storyboardVersionLabel,
+        requestId,
+        routedAt
+      },
+      routing: {
+        status: "approved-routed",
+        storyboard: routedShotId ? "routed" : "pending-context",
+        assetLibrary: "ready",
+        videoStudio: asset.PublicUrl ? "ready" : "pending",
+        targetSceneId: routedSceneId,
+        targetShotId: routedShotId,
+        requestId,
+        updatedAt: routedAt
+      }
+    }
+  };
+
+  await pool
+    .request()
+    .input("productionId", sql.NVarChar(36), row.ProductionId)
+    .input("metadataJson", sql.NVarChar(sql.MAX), JSON.stringify(merged))
+    .query(`
+      UPDATE cacsms.Productions
+      SET MetadataJson = @metadataJson, UpdatedAt = SYSUTCDATETIME()
+      WHERE CONVERT(nvarchar(36), ProductionId) = @productionId;
+    `);
+
+  return merged;
 }
 
 async function advanceVisualBriefToNextStoryboardShot(
@@ -577,6 +724,21 @@ function projectRoot() {
 
 const STORAGE_DIR = path.join(projectRoot(), ".generated", "visuals");
 
+function resolvePersistedVisualStoragePath(storagePath: string) {
+  const trimmed = storagePath.trim();
+  if (!trimmed) return "";
+  const normalized = path.normalize(trimmed);
+  if (fs.existsSync(normalized)) return normalized;
+  const marker = `${path.sep}.generated${path.sep}`;
+  const markerIndex = normalized.lastIndexOf(marker);
+  if (markerIndex >= 0) {
+    const relativeGeneratedPath = normalized.slice(markerIndex + marker.length);
+    const repairedPath = path.join(projectRoot(), ".generated", relativeGeneratedPath);
+    if (fs.existsSync(repairedPath)) return repairedPath;
+  }
+  return normalized;
+}
+
 type JobRow = {
   ImageGenerationJobId: string;
   State: ImageGenerationState;
@@ -585,6 +747,8 @@ type JobRow = {
   ModelName: string | null;
   ProviderJobId: string | null;
   WorkerHeartbeatAt: Date | null;
+  ClaimedAt: Date | null;
+  LeaseExpiresAt: Date | null;
   RetryCount: number;
   FailureReason: string | null;
   NextRecoveryAction: string | null;
@@ -630,6 +794,429 @@ type AssetRow = {
   CreatedAt: Date;
   UpdatedAt: Date;
 };
+
+type QueuePriority = "CRITICAL" | "HIGH" | "NORMAL" | "LOW" | "BACKGROUND";
+
+function queuePriorityFromProduction(priority: string): QueuePriority {
+  const normalized = priority.trim().toLowerCase();
+  if (normalized.includes("critical")) return "CRITICAL";
+  if (normalized.includes("high") || normalized.includes("urgent")) return "HIGH";
+  if (normalized.includes("low")) return "LOW";
+  if (normalized.includes("background")) return "BACKGROUND";
+  return "NORMAL";
+}
+
+function buildSceneKey(row: ProductionRow, brief: VisualBrief) {
+  return `${row.Code}:${brief.scene}`.replace(/\s+/g, " ").trim();
+}
+
+function inferAssetType(brief: VisualBrief) {
+  const combined = [brief.purpose, brief.subject, brief.style, brief.prompt].join(" ").toLowerCase();
+  if (combined.includes("thumbnail")) return "THUMBNAIL";
+  if (combined.includes("diagram")) return "EDUCATIONAL_DIAGRAM";
+  if (combined.includes("map")) return "MAP";
+  if (combined.includes("chart")) return "DATA_CHART";
+  if (combined.includes("infographic")) return "INFOGRAPHIC";
+  return "PHOTOREALISTIC_DOCUMENTARY";
+}
+
+function hashJson(value: unknown) {
+  return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function separateStatusesForState(state: ImageGenerationState) {
+  switch (state) {
+    case "Waiting for Inputs":
+      return {
+        generationStatus: "NOT_STARTED",
+        technicalValidationStatus: "NOT_STARTED",
+        qualityStatus: "NOT_EVALUATED",
+        deliveryStatus: "NOT_STARTED",
+        browserAcknowledgementStatus: "PENDING"
+      };
+    case "Queued":
+      return {
+        generationStatus: "QUEUED",
+        technicalValidationStatus: "NOT_STARTED",
+        qualityStatus: "NOT_EVALUATED",
+        deliveryStatus: "NOT_STARTED",
+        browserAcknowledgementStatus: "PENDING"
+      };
+    case "Generating":
+    case "Uploading":
+      return {
+        generationStatus: "IN_PROGRESS",
+        technicalValidationStatus: "NOT_STARTED",
+        qualityStatus: "NOT_EVALUATED",
+        deliveryStatus: "NOT_STARTED",
+        browserAcknowledgementStatus: "PENDING"
+      };
+    case "Persisting":
+      return {
+        generationStatus: "SUCCEEDED",
+        technicalValidationStatus: "NOT_STARTED",
+        qualityStatus: "NOT_EVALUATED",
+        deliveryStatus: "IN_PROGRESS",
+        browserAcknowledgementStatus: "PENDING"
+      };
+    case "Validating":
+      return {
+        generationStatus: "SUCCEEDED",
+        technicalValidationStatus: "IN_PROGRESS",
+        qualityStatus: "NOT_EVALUATED",
+        deliveryStatus: "IN_PROGRESS",
+        browserAcknowledgementStatus: "PENDING"
+      };
+    case "Reviewing":
+      return {
+        generationStatus: "SUCCEEDED",
+        technicalValidationStatus: "PASSED",
+        qualityStatus: "IN_PROGRESS",
+        deliveryStatus: "VERIFIED",
+        browserAcknowledgementStatus: "LOADED"
+      };
+    case "Completed":
+      return {
+        generationStatus: "SUCCEEDED",
+        technicalValidationStatus: "PASSED",
+        qualityStatus: "PASSED",
+        deliveryStatus: "VERIFIED",
+        browserAcknowledgementStatus: "LOADED"
+      };
+    case "Blocked":
+      return {
+        generationStatus: "SUCCEEDED",
+        technicalValidationStatus: "FAILED",
+        qualityStatus: "FAILED",
+        deliveryStatus: "FAILED",
+        browserAcknowledgementStatus: "FAILED"
+      };
+    case "Rejected":
+    case "Failed":
+      return {
+        generationStatus: "FAILED",
+        technicalValidationStatus: "FAILED",
+        qualityStatus: "FAILED",
+        deliveryStatus: "FAILED",
+        browserAcknowledgementStatus: "FAILED"
+      };
+    case "Revising":
+      return {
+        generationStatus: "SUCCEEDED",
+        technicalValidationStatus: "PASSED",
+        qualityStatus: "FAILED",
+        deliveryStatus: "VERIFIED",
+        browserAcknowledgementStatus: "LOADED"
+      };
+    default:
+      return {
+        generationStatus: "UNKNOWN",
+        technicalValidationStatus: "UNKNOWN",
+        qualityStatus: "UNKNOWN",
+        deliveryStatus: "UNKNOWN",
+        browserAcknowledgementStatus: "PENDING"
+      };
+  }
+}
+
+async function ensureVisualGenerationRequest(
+  pool: sql.ConnectionPool,
+  row: ProductionRow,
+  brief: VisualBrief,
+  metadata: Record<string, unknown>
+) {
+  const sceneKey = buildSceneKey(row, brief);
+  const assetType = inferAssetType(brief);
+  const priority = queuePriorityFromProduction(row.Priority);
+  const storyboardContext = currentStoryboardRequestContext(brief, metadata);
+  const context = {
+    productionId: row.ProductionId,
+    code: row.Code,
+    title: row.Title,
+    sceneKey,
+    assetType,
+    storyboard: storyboardContext,
+    brief,
+    metadata
+  };
+  const contextJson = JSON.stringify(context);
+  const briefHash = hashJson(context);
+  const existing = await pool
+    .request()
+    .input("productionId", sql.NVarChar(36), row.ProductionId)
+    .input("sceneKey", sql.NVarChar(200), sceneKey)
+    .input("assetType", sql.NVarChar(64), assetType)
+    .query<{ VisualGenerationRequestId: string }>(`
+      SELECT TOP(1) CONVERT(nvarchar(36), VisualGenerationRequestId) AS VisualGenerationRequestId
+      FROM cacsms.VisualGenerationRequests
+      WHERE ProductionId = CONVERT(uniqueidentifier, @productionId)
+        AND SceneKey = @sceneKey
+        AND AssetType = @assetType
+        AND IsDeleted = 0
+      ORDER BY CreatedAt DESC;
+    `);
+
+  const requestId = existing.recordset[0]?.VisualGenerationRequestId;
+  if (requestId) {
+    await pool
+      .request()
+      .input("requestId", sql.NVarChar(36), requestId)
+      .input("priority", sql.NVarChar(32), priority)
+      .input("briefHash", sql.NVarChar(64), briefHash)
+      .input("contextJson", sql.NVarChar(sql.MAX), contextJson)
+      .query(`
+        UPDATE cacsms.VisualGenerationRequests
+        SET Priority=@priority,
+            BriefHash=@briefHash,
+            ContextJson=@contextJson,
+            UpdatedAt=SYSUTCDATETIME(),
+            UpdatedByAgent=N'cacsms-visual-agent',
+            Version=Version+1
+        WHERE CONVERT(nvarchar(36), VisualGenerationRequestId)=@requestId;
+      `);
+    return { requestId, sceneKey, assetType, priority };
+  }
+
+  const created = await pool
+    .request()
+    .input("productionId", sql.NVarChar(36), row.ProductionId)
+    .input("sceneKey", sql.NVarChar(200), sceneKey)
+    .input("assetType", sql.NVarChar(64), assetType)
+    .input("purpose", sql.NVarChar(256), brief.purpose)
+    .input("priority", sql.NVarChar(32), priority)
+    .input("briefHash", sql.NVarChar(64), briefHash)
+    .input("contextJson", sql.NVarChar(sql.MAX), contextJson)
+    .query<{ id: string }>(`
+      DECLARE @created TABLE (id nvarchar(36));
+      INSERT cacsms.VisualGenerationRequests (
+        ProductionId, SceneKey, RequestingModule, AssetType, Purpose, Priority, Status, BriefHash, ContextJson
+      )
+      OUTPUT CONVERT(nvarchar(36), inserted.VisualGenerationRequestId) INTO @created(id)
+      VALUES (
+        CONVERT(uniqueidentifier, @productionId), @sceneKey, N'storyboard', @assetType, @purpose, @priority, N'ACTIVE', @briefHash, @contextJson
+      );
+      SELECT TOP(1) id FROM @created;
+    `);
+
+  return { requestId: created.recordset[0].id, sceneKey, assetType, priority };
+}
+
+async function ensureVersionedVisualBrief(
+  pool: sql.ConnectionPool,
+  requestId: string,
+  row: ProductionRow,
+  brief: VisualBrief
+) {
+  const current = await pool
+    .request()
+    .input("requestId", sql.NVarChar(36), requestId)
+    .query<{ VisualBriefId: string; CurrentVersion: number }>(`
+      SELECT TOP(1)
+        CONVERT(nvarchar(36), VisualBriefId) AS VisualBriefId,
+        CurrentVersion
+      FROM cacsms.VisualBriefs
+      WHERE VisualGenerationRequestId = CONVERT(uniqueidentifier, @requestId);
+    `);
+
+  let briefId = current.recordset[0]?.VisualBriefId ?? null;
+  let currentVersion = current.recordset[0]?.CurrentVersion ?? 0;
+  if (!briefId) {
+    const created = await pool
+      .request()
+      .input("requestId", sql.NVarChar(36), requestId)
+      .input("productionId", sql.NVarChar(36), row.ProductionId)
+      .input("sceneKey", sql.NVarChar(200), buildSceneKey(row, brief))
+      .query<{ id: string }>(`
+        DECLARE @created TABLE (id nvarchar(36));
+        INSERT cacsms.VisualBriefs (VisualGenerationRequestId, ProductionId, SceneKey, CurrentVersion, Status)
+        OUTPUT CONVERT(nvarchar(36), inserted.VisualBriefId) INTO @created(id)
+        VALUES (CONVERT(uniqueidentifier, @requestId), CONVERT(uniqueidentifier, @productionId), @sceneKey, 0, N'ACTIVE');
+        SELECT TOP(1) id FROM @created;
+      `);
+    briefId = created.recordset[0].id;
+  }
+
+  const latest = await pool
+    .request()
+    .input("briefId", sql.NVarChar(36), briefId)
+    .query<{ BriefJson: string | null; VersionNumber: number }>(`
+      SELECT TOP(1) BriefJson, VersionNumber
+      FROM cacsms.VisualBriefVersions
+      WHERE VisualBriefId = CONVERT(uniqueidentifier, @briefId)
+      ORDER BY VersionNumber DESC;
+    `);
+
+  const briefJson = JSON.stringify(brief);
+  if (latest.recordset[0]?.BriefJson === briefJson) {
+    return { briefId, versionNumber: latest.recordset[0].VersionNumber };
+  }
+
+  currentVersion = (latest.recordset[0]?.VersionNumber ?? currentVersion) + 1;
+  await pool
+    .request()
+    .input("briefId", sql.NVarChar(36), briefId)
+    .input("versionNumber", sql.Int, currentVersion)
+    .input("briefJson", sql.NVarChar(sql.MAX), briefJson)
+    .input("requiredJson", sql.NVarChar(sql.MAX), JSON.stringify(brief.required))
+    .input("prohibitedJson", sql.NVarChar(sql.MAX), JSON.stringify(brief.prohibited))
+    .input("evidenceJson", sql.NVarChar(sql.MAX), JSON.stringify({ references: brief.references, localeProfile: brief.localeProfile }))
+    .query(`
+      INSERT cacsms.VisualBriefVersions (
+        VisualBriefId, VersionNumber, BriefJson, RequiredElementsJson, ProhibitedElementsJson, EvidenceJson
+      )
+      VALUES (
+        CONVERT(uniqueidentifier, @briefId), @versionNumber, @briefJson, @requiredJson, @prohibitedJson, @evidenceJson
+      );
+      UPDATE cacsms.VisualBriefs
+      SET CurrentVersion=@versionNumber, UpdatedAt=SYSUTCDATETIME(), UpdatedByAgent=N'cacsms-visual-agent', Version=Version+1
+      WHERE CONVERT(nvarchar(36), VisualBriefId)=@briefId;
+    `);
+
+  return { briefId, versionNumber: currentVersion };
+}
+
+async function ensureVersionedVisualPrompt(
+  pool: sql.ConnectionPool,
+  briefId: string,
+  instructions: RenderInstructions
+) {
+  const current = await pool
+    .request()
+    .input("briefId", sql.NVarChar(36), briefId)
+    .query<{ VisualPromptId: string; CurrentVersion: number }>(`
+      SELECT TOP(1)
+        CONVERT(nvarchar(36), VisualPromptId) AS VisualPromptId,
+        CurrentVersion
+      FROM cacsms.VisualPrompts
+      WHERE VisualBriefId = CONVERT(uniqueidentifier, @briefId);
+    `);
+
+  let promptId = current.recordset[0]?.VisualPromptId ?? null;
+  let currentVersion = current.recordset[0]?.CurrentVersion ?? 0;
+  if (!promptId) {
+    const created = await pool
+      .request()
+      .input("briefId", sql.NVarChar(36), briefId)
+      .query<{ id: string }>(`
+        DECLARE @created TABLE (id nvarchar(36));
+        INSERT cacsms.VisualPrompts (VisualBriefId, CurrentVersion, Status)
+        OUTPUT CONVERT(nvarchar(36), inserted.VisualPromptId) INTO @created(id)
+        VALUES (CONVERT(uniqueidentifier, @briefId), 0, N'ACTIVE');
+        SELECT TOP(1) id FROM @created;
+      `);
+    promptId = created.recordset[0].id;
+  }
+
+  const latest = await pool
+    .request()
+    .input("promptId", sql.NVarChar(36), promptId)
+    .query<{ CanonicalPrompt: string | null; NegativePrompt: string | null; VersionNumber: number }>(`
+      SELECT TOP(1) CanonicalPrompt, NegativePrompt, VersionNumber
+      FROM cacsms.VisualPromptVersions
+      WHERE VisualPromptId = CONVERT(uniqueidentifier, @promptId)
+      ORDER BY VersionNumber DESC;
+    `);
+
+  if (
+    latest.recordset[0]?.CanonicalPrompt === instructions.prompt &&
+    latest.recordset[0]?.NegativePrompt === instructions.negativePrompt
+  ) {
+    return { promptId, versionNumber: latest.recordset[0].VersionNumber };
+  }
+
+  currentVersion = (latest.recordset[0]?.VersionNumber ?? currentVersion) + 1;
+  await pool
+    .request()
+    .input("promptId", sql.NVarChar(36), promptId)
+    .input("versionNumber", sql.Int, currentVersion)
+    .input("canonicalPrompt", sql.NVarChar(sql.MAX), instructions.prompt)
+    .input("modelSpecificPrompt", sql.NVarChar(sql.MAX), instructions.prompt)
+    .input("negativePrompt", sql.NVarChar(sql.MAX), instructions.negativePrompt)
+    .input(
+      "validationJson",
+      sql.NVarChar(sql.MAX),
+      JSON.stringify({
+        unresolvedVariables: false,
+        localeResolved: Boolean(instructions.settings.localeProfile.country),
+        dimensions: { width: instructions.settings.width, height: instructions.settings.height },
+        workflow: instructions.mode.mode
+      })
+    )
+    .query(`
+      INSERT cacsms.VisualPromptVersions (
+        VisualPromptId, VersionNumber, CanonicalPrompt, ModelSpecificPrompt, NegativePrompt, ValidationJson
+      )
+      VALUES (
+        CONVERT(uniqueidentifier, @promptId), @versionNumber, @canonicalPrompt, @modelSpecificPrompt, @negativePrompt, @validationJson
+      );
+      UPDATE cacsms.VisualPrompts
+      SET CurrentVersion=@versionNumber, UpdatedAt=SYSUTCDATETIME(), UpdatedByAgent=N'cacsms-visual-agent', Version=Version+1
+      WHERE CONVERT(nvarchar(36), VisualPromptId)=@promptId;
+    `);
+
+  return { promptId, versionNumber: currentVersion };
+}
+
+async function appendVisualStateHistory(
+  pool: sql.ConnectionPool,
+  input: {
+    jobId: string;
+    requestId: string | null;
+    previousState: string | null;
+    newState: string;
+    attempt: number;
+    workerName: string | null;
+    providerName: string | null;
+    modelName: string | null;
+    correlationId: string | null;
+    reason: string | null;
+    errorDetailsJson?: string | null;
+  }
+) {
+  await pool
+    .request()
+    .input("jobId", sql.NVarChar(36), input.jobId)
+    .input("requestId", sql.NVarChar(36), input.requestId)
+    .input("previousState", sql.NVarChar(32), input.previousState)
+    .input("newState", sql.NVarChar(32), input.newState)
+    .input("reason", sql.NVarChar(2000), input.reason)
+    .input("attempt", sql.Int, input.attempt)
+    .input("workerName", sql.NVarChar(200), input.workerName)
+    .input("providerName", sql.NVarChar(120), input.providerName)
+    .input("modelName", sql.NVarChar(200), input.modelName)
+    .input("correlationId", sql.NVarChar(128), input.correlationId)
+    .input("errorDetailsJson", sql.NVarChar(sql.MAX), input.errorDetailsJson ?? null)
+    .query(`
+      INSERT cacsms.VisualGenerationStateHistory (
+        ImageGenerationJobId,
+        VisualGenerationRequestId,
+        PreviousState,
+        NewState,
+        Reason,
+        Attempt,
+        WorkerName,
+        AgentName,
+        ProviderName,
+        ModelName,
+        CorrelationId,
+        ErrorDetailsJson
+      )
+      VALUES (
+        CONVERT(uniqueidentifier, @jobId),
+        CASE WHEN @requestId IS NULL THEN NULL ELSE CONVERT(uniqueidentifier, @requestId) END,
+        @previousState,
+        @newState,
+        @reason,
+        @attempt,
+        @workerName,
+        N'cacsms-visual-agent',
+        @providerName,
+        @modelName,
+        @correlationId,
+        @errorDetailsJson
+      );
+    `);
+}
 
 function averageQuality(quality: VisualQuality) {
   const values = Object.values(quality);
@@ -832,7 +1419,7 @@ function buildRenderInstructions(brief: VisualBrief, row: ProductionRow, width: 
       width,
       height,
       seed,
-      inference: process.env.CACSMS_LOCAL_IMAGE_MODEL_ID ? "local-diffusion" : "development-preview-renderer",
+      inference: "local-provider-runtime",
       localeProfile: brief.localeProfile,
       qualityGates: [
         "human photorealism",
@@ -858,9 +1445,8 @@ function providerIsProductionPhotoreal(provider: ProviderAudit, instructions: Re
   if (instructions.mode.mode !== "photoreal-human") return true;
   const model = String(provider.model ?? "");
   const method = String(provider.method ?? "");
-  const hasConfiguredDiffusionModel = Boolean(process.env.CACSMS_LOCAL_IMAGE_MODEL_ID?.trim());
   const isDevRenderer = /3d human scene renderer|procedural|fallback|preview|raster synthesis/i.test(`${model} ${method}`);
-  return provider.provider === PHOTO_REAL_PROVIDER && hasConfiguredDiffusionModel && !isDevRenderer;
+  return provider.provider === PHOTO_REAL_PROVIDER && !isDevRenderer;
 }
 
 function paethPredictor(left: number, above: number, upperLeft: number) {
@@ -874,7 +1460,11 @@ function paethPredictor(left: number, above: number, upperLeft: number) {
 }
 
 function pngHumanPixelEvidence(storagePath: string) {
-  const bytes = fs.readFileSync(storagePath);
+  const resolvedStoragePath = resolvePersistedVisualStoragePath(storagePath);
+  if (!resolvedStoragePath || !fs.existsSync(resolvedStoragePath)) {
+    return { skinPixelRatio: 0, skinPixels: 0, sampledPixels: 0, supported: false };
+  }
+  const bytes = fs.readFileSync(resolvedStoragePath);
   if (bytes.length < 33 || bytes.subarray(1, 4).toString("ascii") !== "PNG") {
     return { skinPixelRatio: 0, skinPixels: 0, sampledPixels: 0, supported: false };
   }
@@ -966,7 +1556,24 @@ function localSemanticImageEvidence(storagePath: string, prompt: string): Semant
     process.env.CACSMS_LOCAL_IMAGE_VALIDATOR_SCRIPT?.trim() ||
     path.join(process.env.CACSMS_LOCAL_IMAGE_MODEL_DIR || path.join(projectRoot(), "local-models", "image-renderer"), "validate_image.py");
   const modelId = process.env.CACSMS_LOCAL_IMAGE_VALIDATOR_MODEL_ID?.trim();
-  const args = [validatorScript, "--image", storagePath, "--prompt", prompt];
+  const resolvedStoragePath = resolvePersistedVisualStoragePath(storagePath);
+  if (!resolvedStoragePath || !fs.existsSync(resolvedStoragePath)) {
+    return {
+      available: false,
+      model: modelId || null,
+      scores: {},
+      detectors: {},
+      composition: {},
+      passedHumanPresence: false,
+      passedPhotographicStyle: false,
+      passedAnatomyRisk: false,
+      passedComposition: false,
+      passedNaturalHuman: false,
+      passedRegionalAppearance: false,
+      error: "Persisted image file is missing from storage."
+    };
+  }
+  const args = [validatorScript, "--image", resolvedStoragePath, "--prompt", prompt];
   if (modelId) args.push("--model-id", modelId);
   try {
     const stdout = execFileSync(command, args, {
@@ -1239,10 +1846,24 @@ function ensureVisualBriefMetadata(row: ProductionRow) {
 
 async function ensureSchema(pool: sql.ConnectionPool) {
   const result = await pool.request().query<{ present: number }>(
-    "SELECT CASE WHEN OBJECT_ID(N'cacsms.ImageGenerationJobs', N'U') IS NULL THEN 0 ELSE 1 END AS present;"
+    `SELECT CASE
+        WHEN OBJECT_ID(N'cacsms.ImageGenerationJobs', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualGenerationRequests', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualGenerationStateHistory', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualBriefs', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualBriefVersions', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualPrompts', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualPromptVersions', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualModelProviders', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualModels', N'U') IS NULL THEN 0
+        WHEN OBJECT_ID(N'cacsms.VisualWorkflows', N'U') IS NULL THEN 0
+        ELSE 1
+      END AS present;`
   );
   if (!result.recordset[0]?.present) {
-    throw new Error("Image generator schema is missing. Apply MSSQL migration 032_autonomous_image_generation_assets.sql before using the autonomous image generator.");
+    throw new Error(
+      "Image generator foundation schema is missing. Apply MSSQL migrations 032_autonomous_image_generation_assets.sql and 035_visual_intelligence_foundation.sql before using the autonomous image generator."
+    );
   }
 }
 
@@ -1316,6 +1937,8 @@ async function latestJob(pool: sql.ConnectionPool, productionId: string) {
       ModelName,
       ProviderJobId,
       WorkerHeartbeatAt,
+      ClaimedAt,
+      LeaseExpiresAt,
       RetryCount,
       FailureReason,
       NextRecoveryAction,
@@ -1415,23 +2038,113 @@ async function updateProductionState(
     `);
 }
 
-async function createJob(pool: sql.ConnectionPool, productionId: string, state: ImageGenerationState) {
+async function createJob(
+  pool: sql.ConnectionPool,
+  productionId: string,
+  requestId: string | null,
+  queuePriority: QueuePriority,
+  state: ImageGenerationState
+) {
   const runtime = defaultJobRuntime();
+  const correlationId = crypto.randomUUID();
+  const statuses = separateStatusesForState(state);
   const result = await pool
     .request()
     .input("productionId", sql.NVarChar(36), productionId)
+    .input("requestId", sql.NVarChar(36), requestId)
+    .input("queuePriority", sql.NVarChar(32), queuePriority)
     .input("state", sql.NVarChar(30), state)
     .input("worker", sql.NVarChar(200), runtime.worker)
     .input("provider", sql.NVarChar(120), runtime.provider)
     .input("model", sql.NVarChar(200), runtime.model)
+    .input("generationStatus", sql.NVarChar(32), statuses.generationStatus)
+    .input("technicalValidationStatus", sql.NVarChar(32), statuses.technicalValidationStatus)
+    .input("qualityStatus", sql.NVarChar(32), statuses.qualityStatus)
+    .input("deliveryStatus", sql.NVarChar(32), statuses.deliveryStatus)
+    .input("browserAcknowledgementStatus", sql.NVarChar(32), statuses.browserAcknowledgementStatus)
+    .input("correlationId", sql.NVarChar(128), correlationId)
     .query<{ id: string }>(`
       DECLARE @created TABLE (id nvarchar(36));
-      INSERT cacsms.ImageGenerationJobs (ProductionId, State, WorkerName, ProviderName, ModelName, RetryCount, NextRecoveryAction, LastTransitionAt)
+      INSERT cacsms.ImageGenerationJobs (
+        ProductionId,
+        VisualGenerationRequestId,
+        QueuePriority,
+        State,
+        WorkerName,
+        ProviderName,
+        ModelName,
+        RetryCount,
+        NextRecoveryAction,
+        LastTransitionAt,
+        GenerationStatus,
+        TechnicalValidationStatus,
+        QualityStatus,
+        DeliveryStatus,
+        BrowserAcknowledgementStatus,
+        ClaimedAt,
+        LeaseExpiresAt,
+        CorrelationId
+      )
       OUTPUT CONVERT(nvarchar(36), inserted.ImageGenerationJobId) INTO @created(id)
-      VALUES (CONVERT(uniqueidentifier, @productionId), @state, @worker, @provider, @model, 0, N'Await scheduler dispatch.', SYSUTCDATETIME());
+      VALUES (
+        CONVERT(uniqueidentifier, @productionId),
+        CASE WHEN @requestId IS NULL THEN NULL ELSE CONVERT(uniqueidentifier, @requestId) END,
+        @queuePriority,
+        @state,
+        @worker,
+        @provider,
+        @model,
+        0,
+        N'Await scheduler dispatch.',
+        SYSUTCDATETIME(),
+        @generationStatus,
+        @technicalValidationStatus,
+        @qualityStatus,
+        @deliveryStatus,
+        @browserAcknowledgementStatus,
+        SYSUTCDATETIME(),
+        DATEADD(second, ${CLAIM_LEASE_SECONDS}, SYSUTCDATETIME()),
+        @correlationId
+      );
       SELECT TOP(1) id FROM @created;
     `);
-  return result.recordset[0].id;
+  const jobId = result.recordset[0].id;
+  await appendVisualStateHistory(pool, {
+    jobId,
+    requestId,
+    previousState: null,
+    newState: state,
+    attempt: 0,
+    workerName: runtime.worker,
+    providerName: runtime.provider,
+    modelName: runtime.model,
+    correlationId,
+    reason: "Image generation job created."
+  });
+  return jobId;
+}
+
+async function claimGenerationLease(pool: sql.ConnectionPool, jobId: string) {
+  const claimed = await pool
+    .request()
+    .input("jobId", sql.NVarChar(36), jobId)
+    .input("worker", sql.NVarChar(200), DEFAULT_WORKER)
+    .query<{ claimed: number }>(`
+      UPDATE cacsms.ImageGenerationJobs
+      SET ClaimedAt = SYSUTCDATETIME(),
+          LeaseExpiresAt = DATEADD(second, ${CLAIM_LEASE_SECONDS}, SYSUTCDATETIME()),
+          WorkerName = @worker,
+          WorkerHeartbeatAt = SYSUTCDATETIME(),
+          UpdatedAt = SYSUTCDATETIME()
+      WHERE CONVERT(nvarchar(36), ImageGenerationJobId) = @jobId
+        AND (
+          LeaseExpiresAt IS NULL
+          OR LeaseExpiresAt <= SYSUTCDATETIME()
+          OR WorkerName = @worker
+        );
+      SELECT @@ROWCOUNT AS claimed;
+    `);
+  return claimed.recordset[0]?.claimed === 1;
 }
 
 function sanitizePhotorealBriefPrompt(prompt: string) {
@@ -1579,6 +2292,28 @@ async function patchJob(
     providerJobId?: string | null;
   }
 ) {
+  const current = await pool.request().input("jobId", sql.NVarChar(36), jobId).query<{
+    State: string | null;
+    RetryCount: number;
+    WorkerName: string | null;
+    ProviderName: string | null;
+    ModelName: string | null;
+    CorrelationId: string | null;
+    VisualGenerationRequestId: string | null;
+  }>(`
+    SELECT TOP(1)
+      State,
+      RetryCount,
+      WorkerName,
+      ProviderName,
+      ModelName,
+      CorrelationId,
+      CONVERT(nvarchar(36), VisualGenerationRequestId) AS VisualGenerationRequestId
+    FROM cacsms.ImageGenerationJobs
+    WHERE CONVERT(nvarchar(36), ImageGenerationJobId)=@jobId;
+  `);
+  const currentRow = current.recordset[0] ?? null;
+  const statuses = separateStatusesForState(patch.state);
   await pool
     .request()
     .input("jobId", sql.NVarChar(36), jobId)
@@ -1589,6 +2324,11 @@ async function patchJob(
     .input("storageResult", sql.NVarChar(400), patch.storageResult ?? null)
     .input("modelResponse", sql.NVarChar(sql.MAX), patch.modelResponse ?? null)
     .input("providerJobId", sql.NVarChar(200), patch.providerJobId ?? null)
+    .input("generationStatus", sql.NVarChar(32), statuses.generationStatus)
+    .input("technicalValidationStatus", sql.NVarChar(32), statuses.technicalValidationStatus)
+    .input("qualityStatus", sql.NVarChar(32), statuses.qualityStatus)
+    .input("deliveryStatus", sql.NVarChar(32), statuses.deliveryStatus)
+    .input("browserAcknowledgementStatus", sql.NVarChar(32), statuses.browserAcknowledgementStatus)
     .query(`
       UPDATE cacsms.ImageGenerationJobs
       SET
@@ -1599,11 +2339,31 @@ async function patchJob(
         StorageResult=@storageResult,
         ModelResponseJson=@modelResponse,
         ProviderJobId=COALESCE(@providerJobId, ProviderJobId),
+        GenerationStatus=@generationStatus,
+        TechnicalValidationStatus=@technicalValidationStatus,
+        QualityStatus=@qualityStatus,
+        DeliveryStatus=@deliveryStatus,
+        BrowserAcknowledgementStatus=@browserAcknowledgementStatus,
+        ClaimedAt=CASE WHEN @state IN (N'Queued', N'Generating', N'Uploading', N'Persisting', N'Validating', N'Reviewing', N'Revising', N'Waiting for Inputs') THEN COALESCE(ClaimedAt, SYSUTCDATETIME()) ELSE ClaimedAt END,
+        LeaseExpiresAt=CASE WHEN @state IN (N'Queued', N'Generating', N'Uploading', N'Persisting', N'Validating', N'Reviewing', N'Revising', N'Waiting for Inputs') THEN DATEADD(second, ${CLAIM_LEASE_SECONDS}, SYSUTCDATETIME()) ELSE NULL END,
         WorkerHeartbeatAt=SYSUTCDATETIME(),
         UpdatedAt=SYSUTCDATETIME(),
         LastTransitionAt=SYSUTCDATETIME()
       WHERE CONVERT(nvarchar(36), ImageGenerationJobId)=@jobId;
     `);
+  await appendVisualStateHistory(pool, {
+    jobId,
+    requestId: currentRow?.VisualGenerationRequestId ?? null,
+    previousState: currentRow?.State ?? null,
+    newState: patch.state,
+    attempt: patch.retryCount,
+    workerName: currentRow?.WorkerName ?? DEFAULT_WORKER,
+    providerName: currentRow?.ProviderName ?? defaultJobRuntime().provider,
+    modelName: currentRow?.ModelName ?? defaultJobRuntime().model,
+    correlationId: currentRow?.CorrelationId ?? null,
+    reason: patch.failureReason ?? patch.nextRecoveryAction ?? patch.storageResult ?? null,
+    errorDetailsJson: patch.modelResponse ?? null
+  });
 }
 
 async function patchVariant(
@@ -1657,7 +2417,8 @@ async function insertAsset(
   fileSizeBytes: number,
   width: number,
   height: number,
-  checksumSha256: string
+  checksumSha256: string,
+  technicalValidation?: TechnicalImageValidation | null
 ) {
   const result = await pool
     .request()
@@ -1670,14 +2431,29 @@ async function insertAsset(
     .input("width", sql.Int, width)
     .input("height", sql.Int, height)
     .input("checksumSha256", sql.NVarChar(64), checksumSha256)
+    .input("technicalValidationJson", sql.NVarChar(sql.MAX), technicalValidation ? JSON.stringify(technicalValidation) : null)
     .query<{ id: string }>(`
       DECLARE @created TABLE (id nvarchar(36));
       INSERT cacsms.ImageGenerationAssets (
-        ProductionId, ImageGenerationJobId, FileName, StoragePath, PublicUrl, MimeType, FileSizeBytes, Width, Height, ChecksumSha256, AvailabilityStatus, AvailabilityCheckedAt, BrowserLoadStatus
+        ProductionId,
+        ImageGenerationJobId,
+        FileName,
+        StoragePath,
+        PublicUrl,
+        MimeType,
+        FileSizeBytes,
+        Width,
+        Height,
+        ChecksumSha256,
+        AvailabilityStatus,
+        AvailabilityCheckedAt,
+        BrowserLoadStatus,
+        TechnicalValidationJson,
+        ValidationStatus
       )
       OUTPUT CONVERT(nvarchar(36), inserted.ImageGenerationAssetId) INTO @created(id)
       VALUES (
-        CONVERT(uniqueidentifier, @productionId), CONVERT(uniqueidentifier, @jobId), @fileName, @storagePath, @publicUrl, N'image/png', @fileSizeBytes, @width, @height, @checksumSha256, N'pending', SYSUTCDATETIME(), N'pending'
+        CONVERT(uniqueidentifier, @productionId), CONVERT(uniqueidentifier, @jobId), @fileName, @storagePath, @publicUrl, N'image/png', @fileSizeBytes, @width, @height, @checksumSha256, N'pending', SYSUTCDATETIME(), N'pending', @technicalValidationJson, N'NOT_VALIDATED'
       );
       SELECT TOP(1) id FROM @created;
     `);
@@ -1692,6 +2468,25 @@ async function setAssetBrowserLoad(pool: sql.ConnectionPool, assetId: string, st
         UpdatedAt=SYSUTCDATETIME()
     WHERE CONVERT(nvarchar(36), ImageGenerationAssetId)=@assetId;
   `);
+}
+
+async function setAssetTechnicalValidation(
+  pool: sql.ConnectionPool,
+  assetId: string,
+  validation: TechnicalImageValidation
+) {
+  await pool
+    .request()
+    .input("assetId", sql.NVarChar(36), assetId)
+    .input("validationJson", sql.NVarChar(sql.MAX), JSON.stringify(validation))
+    .input("validationStatus", sql.NVarChar(32), validation.passed ? "PASSED" : "FAILED")
+    .query(`
+      UPDATE cacsms.ImageGenerationAssets
+      SET TechnicalValidationJson=@validationJson,
+          ValidationStatus=@validationStatus,
+          UpdatedAt=SYSUTCDATETIME()
+      WHERE CONVERT(nvarchar(36), ImageGenerationAssetId)=@assetId;
+    `);
 }
 
 function currentQuality(asset: AssetRow | null, variant?: Pick<VariantRow, "QualitySummaryJson"> | null) {
@@ -1859,6 +2654,24 @@ function selectActiveVariant(
 ): (VariantRow & Partial<AssetRow>) | null {
   if (!variants.length) return null;
   const jobState = job?.State ?? "Queued";
+  const reviewingVariant = variants.find((variant) => variant.State === "Reviewing" && variant.ImageGenerationAssetId);
+  if (jobState === "Reviewing" && reviewingVariant) {
+    return reviewingVariant;
+  }
+  const approved = variants
+    .filter((variant) => variant.State === "Completed" && variant.ImageGenerationAssetId)
+    .sort((left, right) => {
+      const leftLoaded = (left.BrowserLoadStatus ?? "pending") === "loaded" ? 1 : 0;
+      const rightLoaded = (right.BrowserLoadStatus ?? "pending") === "loaded" ? 1 : 0;
+      if (rightLoaded !== leftLoaded) return rightLoaded - leftLoaded;
+      const leftScore = Number.isFinite(left.QualityScore) ? Number(left.QualityScore) : -1;
+      const rightScore = Number.isFinite(right.QualityScore) ? Number(right.QualityScore) : -1;
+      if (rightScore !== leftScore) return rightScore - leftScore;
+      return new Date(right.UpdatedAt).getTime() - new Date(left.UpdatedAt).getTime();
+    });
+  if (jobState === "Completed" && approved[0]) {
+    return approved[0];
+  }
   return [...variants].sort((left, right) => {
     const priorityDiff = activeVariantPriority(jobState, left) - activeVariantPriority(jobState, right);
     if (priorityDiff !== 0) return priorityDiff;
@@ -2162,7 +2975,7 @@ function mapProductionRecord(row: ProductionRow, brief: ReturnType<typeof briefF
         (typeof parseJsonObject(job?.ModelResponseJson ?? null).model === "string"
           ? String(parseJsonObject(job?.ModelResponseJson ?? null).model)
           : null) ||
-        (process.env.CACSMS_LOCAL_IMAGE_MODEL_ID ? configuredNeuralImageModel() : DEFAULT_MODEL),
+        configuredNeuralImageModel(),
       action: state,
       elapsedSeconds: Math.max(
         0,
@@ -2191,7 +3004,11 @@ function mapProductionRecord(row: ProductionRow, brief: ReturnType<typeof briefF
   };
 }
 
-async function validateStoredAsset(assetId: string) {
+async function validateStoredAsset(
+  assetId: string,
+  expectedWidth?: number,
+  expectedHeight?: number
+): Promise<TechnicalImageValidation & { responseErrors: string[] }> {
   const response = await fetch(`${endpointOrigin()}${createVisualAssetUrl(assetId)}`, {
     headers: process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN
       ? { "x-cacsms-internal": process.env.CACSMS_INTERNAL_AUTONOMY_TOKEN }
@@ -2199,12 +3016,29 @@ async function validateStoredAsset(assetId: string) {
     cache: "no-store"
   });
   const bytes = Buffer.from(await response.arrayBuffer());
-  return validateServedImageResponse({
+  const responseErrors = validateServedImageResponse({
     ok: response.ok,
     contentType: response.headers.get("content-type"),
     byteLength: bytes.length,
-    expectedMimeType: "image/png"
+    expectedMimeType: "image/png",
+    bytes,
+    expectedWidth,
+    expectedHeight
   });
+  const technical = validateTechnicalImageBytes({
+    bytes,
+    mimeType: response.headers.get("content-type"),
+    expectedMimeType: "image/png",
+    expectedWidth,
+    expectedHeight
+  });
+  const mergedReasons = Array.from(new Set([...responseErrors, ...technical.reasons]));
+  return {
+    ...technical,
+    passed: technical.passed && responseErrors.length === 0,
+    reasons: mergedReasons,
+    responseErrors
+  };
 }
 
 async function getProductionContext(pool: sql.ConnectionPool, row: ProductionRow) {
@@ -2249,44 +3083,95 @@ export async function runImageGenerationScheduler(): Promise<ImageGeneratorPaylo
 async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload> {
   const { pool, workspaceId } = await workspace();
   const candidates = await listCandidateProductions(pool, workspaceId);
-  const activeCandidates: {
+  const activeCandidates: Array<{
     row: ProductionRow;
     job: JobRow | null;
     variants: (VariantRow & Partial<AssetRow>)[];
-  }[] = [];
+    metadata: Record<string, unknown>;
+    brief: VisualBrief;
+    valid: boolean;
+    reason: string | null;
+  }> = [];
   for (const candidate of candidates) {
+    const { metadata, brief, valid, reason } = ensureVisualBriefMetadata(candidate);
     const job = await latestJob(pool, candidate.ProductionId);
     const variants = await productionVariants(pool, candidate.ProductionId);
-    const candidateMetadata = parseMetadata(candidate.MetadataJson);
-    if (jobNeedsAutonomousWork(job, variants, candidateMetadata)) {
-      activeCandidates.push({ row: candidate, job, variants });
+    if (jobNeedsAutonomousWork(job, variants, metadata)) {
+      activeCandidates.push({ row: candidate, job, variants, metadata, brief, valid, reason });
     }
   }
+  // #region debug-point E:scheduler-candidates
+  reportImageEngineDebug("E", "lib/image-generator-engine.ts:executeImageGenerationScheduler", "scheduler candidates prepared", {
+    candidates: candidates.length,
+    activeCandidates: activeCandidates.length
+  });
+  // #endregion
   activeCandidates.sort((left, right) => {
     const priorityDiff = schedulerJobPriority(left.job) - schedulerJobPriority(right.job);
     if (priorityDiff !== 0) return priorityDiff;
     return new Date(right.job?.UpdatedAt ?? right.row.UpdatedAt).getTime() - new Date(left.job?.UpdatedAt ?? left.row.UpdatedAt).getTime();
   });
-  const selected = activeCandidates[0];
-  const row = selected?.row;
-  const selectedJob = selected?.job ?? null;
-  const selectedVariants = selected?.variants ?? [];
-  if (!row) return getImageGeneratorData();
+  let row: ProductionRow | null = null;
+  let job: JobRow | null = null;
+  let variants: (VariantRow & Partial<AssetRow>)[] = [];
+  let metadata: Record<string, unknown> = {};
+  let brief: VisualBrief | null = null;
+  let valid = false;
+  let reason: string | null = null;
+  let requestContext: Awaited<ReturnType<typeof ensureVisualGenerationRequest>> | null = null;
+
+  for (const candidate of activeCandidates) {
+    requestContext = await ensureVisualGenerationRequest(pool, candidate.row, candidate.brief, candidate.metadata);
+    let candidateJob = candidate.job;
+    if (!candidateJob) {
+      const jobId = await createJob(pool, candidate.row.ProductionId, requestContext.requestId, requestContext.priority, candidate.valid ? "Queued" : "Waiting for Inputs");
+      candidateJob = await latestJob(pool, candidate.row.ProductionId);
+      if (!candidateJob || candidateJob.ImageGenerationJobId !== jobId) {
+        continue;
+      }
+    }
+    const claimed = await claimGenerationLease(pool, candidateJob.ImageGenerationJobId);
+    // #region debug-point C:lease-claim
+    reportImageEngineDebug("C", "lib/image-generator-engine.ts:claimGenerationLease", "lease claim attempted", {
+      productionId: candidate.row.ProductionId,
+      jobId: candidateJob.ImageGenerationJobId,
+      requestId: requestContext.requestId,
+      claimed,
+      priorState: candidateJob.State ?? null,
+      retryCount: candidateJob.RetryCount ?? 0
+    });
+    // #endregion
+    if (!claimed) continue;
+    row = candidate.row;
+    job = await latestJob(pool, candidate.row.ProductionId);
+    variants = await productionVariants(pool, candidate.row.ProductionId);
+    metadata = candidate.metadata;
+    brief = candidate.brief;
+    valid = candidate.valid;
+    reason = candidate.reason;
+    break;
+  }
+  if (!row || !job || !brief || !requestContext) {
+    // #region debug-point E:no-active-job
+    reportImageEngineDebug("E", "lib/image-generator-engine.ts:executeImageGenerationScheduler", "scheduler found no runnable image job", {
+      activeCandidates: activeCandidates.length
+    });
+    // #endregion
+    return getImageGeneratorData();
+  }
 
   void dispatchAssetEngineJob({
     engine: "image-generator",
     productionId: row.ProductionId,
     title: row.Title,
     stage: row.Stage,
-    metadata: { jobState: selectedJob?.State ?? "new", code: row.Code }
+    metadata: { jobState: job.State ?? "new", code: row.Code }
   });
 
-  const { metadata, brief, valid, reason } = ensureVisualBriefMetadata(row);
-  let job = selectedJob;
-  let variants = selectedVariants;
-
   if (!valid) {
-    const jobId = job?.ImageGenerationJobId ?? (await createJob(pool, row.ProductionId, "Waiting for Inputs"));
+    const jobId =
+      job?.ImageGenerationJobId ??
+      (await createJob(pool, row.ProductionId, requestContext.requestId, requestContext.priority, "Waiting for Inputs"));
     await patchJob(pool, jobId, {
       state: "Waiting for Inputs",
       retryCount: job?.RetryCount ?? 0,
@@ -2295,17 +3180,13 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       storageResult: reason || null
     });
     await updateProductionState(pool, row, metadata, "visual-generation", "blocked", stateToProgress("Waiting for Inputs"));
-    return getImageGeneratorData();
-  }
-
-  if (!job) {
-    const jobId = await createJob(pool, row.ProductionId, "Queued");
-    const { width, height } = dimensionsFromAspectRatio(brief.aspectRatio);
-    for (let variantNumber = 1; variantNumber <= TARGET_VARIANT_COUNT; variantNumber += 1) {
-      const instructions = buildRenderInstructions(brief, row, width, height, `${jobId}-v${variantNumber}`, variantNumber, 0);
-      await createVariant(pool, row.ProductionId, jobId, variantNumber, instructions.prompt, "Queued", 0);
-    }
-    await updateProductionState(pool, row, metadata, "visual-generation", "queued", stateToProgress("Queued"));
+    // #region debug-point E:waiting-for-inputs
+    reportImageEngineDebug("E", "lib/image-generator-engine.ts:executeImageGenerationScheduler", "job blocked waiting for inputs", {
+      productionId: row.ProductionId,
+      requestId: requestContext.requestId,
+      reason
+    });
+    // #endregion
     return getImageGeneratorData();
   }
 
@@ -2366,22 +3247,31 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       return getImageGeneratorData();
     }
     if (asset.BrowserLoadStatus !== "loaded") {
-      const validationErrors = await validateStoredAsset(asset.ImageGenerationAssetId);
-      if (validationErrors.length) {
+      const technicalValidation = await validateStoredAsset(asset.ImageGenerationAssetId);
+      if (!technicalValidation.passed) {
+        // #region debug-point D:technical-validation-failed
+        reportImageEngineDebug("D", "lib/image-generator-engine.ts:validateStoredAsset", "stored asset validation failed", {
+          productionId: row.ProductionId,
+          requestId: requestContext.requestId,
+          assetId: asset.ImageGenerationAssetId,
+          reasons: technicalValidation.reasons
+        });
+        // #endregion
+        await setAssetTechnicalValidation(pool, asset.ImageGenerationAssetId, technicalValidation);
         await setAssetBrowserLoad(pool, asset.ImageGenerationAssetId, "failed");
         await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
           state: "Blocked",
           retryCount: job.RetryCount,
           assetId: asset.ImageGenerationAssetId,
-          failureReason: `Asset endpoint validation failed: ${validationErrors.join(" ")}`,
-          storageResult: validationErrors.join(" ")
+          failureReason: `Asset endpoint validation failed: ${technicalValidation.reasons.join(" ")}`,
+          storageResult: technicalValidation.reasons.join(" ")
         });
         await patchJob(pool, job.ImageGenerationJobId, {
           state: "Blocked",
           retryCount: job.RetryCount,
-          failureReason: `Asset endpoint validation failed: ${validationErrors.join(" ")}`,
+          failureReason: `Asset endpoint validation failed: ${technicalValidation.reasons.join(" ")}`,
           nextRecoveryAction: "Verify the persisted asset URL, storage file, and reverse-proxy path.",
-          storageResult: validationErrors.join(" ")
+          storageResult: technicalValidation.reasons.join(" ")
         });
         await updateProductionState(pool, row, metadata, "visual-generation", "blocked", stateToProgress("Blocked"));
         return getImageGeneratorData();
@@ -2430,6 +3320,17 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       gate.passed = false;
       gate.defects.unshift(`Overall quality score ${gate.score}% is below the ${MIN_QUALITY_SCORE}% production threshold.`);
     }
+    // #region debug-point D:review-gate
+    reportImageEngineDebug("D", "lib/image-generator-engine.ts:evaluatePhotorealHumanGates", "review gate evaluated", {
+      productionId: row.ProductionId,
+      requestId: requestContext.requestId,
+      assetId: asset.ImageGenerationAssetId,
+      variantId: activeVariant.ImageGenerationVariantId,
+      passed: gate.passed,
+      score: gate.score,
+      defects: gate.defects.slice(0, 4)
+    });
+    // #endregion
     if (gate.passed) {
       const integrityErrors = getCompletedVariantIntegrityErrors({
         state: "Completed",
@@ -2459,21 +3360,40 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
         qualityScore: gate.score,
         qualitySummary: JSON.stringify({ quality: gate.quality, passed: true, defects: [], audit: gate.audit })
       });
+      const routedMetadata = await routeApprovedAsset(
+        pool,
+        row,
+        metadata,
+        brief,
+        requestContext.requestId,
+        {
+          ...activeVariant,
+          State: "Completed",
+          ImageGenerationAssetId: asset.ImageGenerationAssetId,
+          QualityScore: gate.score
+        },
+        asset
+      );
       const refreshedVariants = await productionVariants(pool, row.ProductionId);
       const pending = pendingGenerationVariants(refreshedVariants);
       const approvedCount = approvedVariantCount(refreshedVariants);
       const target = targetVisualAssetCount(metadata);
       const reviewSummary = JSON.stringify({
         ...parseJsonObject(job.ModelResponseJson),
-        review: { quality: gate.quality, score: gate.score, passed: true, defects: [], audit: gate.audit }
+        review: { quality: gate.quality, score: gate.score, passed: true, defects: [], audit: gate.audit },
+        routing: asObject(asObject(routedMetadata.visualGeneration).routing)
       });
       if (approvedCount < target || pending.length > 0) {
-        const nextMetadata = await advanceVisualBriefToNextStoryboardShot(pool, row, metadata);
+        const nextMetadata = await advanceVisualBriefToNextStoryboardShot(pool, row, routedMetadata);
+        const routedShotId = asOptionalString(asObject(asObject(routedMetadata.visualGeneration).routing).targetShotId);
         await patchJob(pool, job.ImageGenerationJobId, {
           state: "Queued",
           retryCount: job.RetryCount,
-          nextRecoveryAction: `Approved variant ${activeVariant.VariantNumber}. Generating ${Math.max(pending.length, target - approvedCount)} remaining high-quality variant(s).`,
-          storageResult: `Approved asset ${asset.ImageGenerationAssetId}; ${approvedCount}/${target} production-grade variants ready.`,
+          nextRecoveryAction: `Approved routed asset for storyboard shot ${routedShotId ?? "pending-shot-context"}. Generating ${Math.max(
+            pending.length,
+            target - approvedCount
+          )} remaining storyboard-aligned asset(s).`,
+          storageResult: `Approved asset ${asset.ImageGenerationAssetId}; ${approvedCount}/${target} routed storyboard asset(s) ready.`,
           modelResponse: reviewSummary
         });
         await updateProductionState(pool, row, nextMetadata, "visual-generation", "active", stateToProgress("Queued"));
@@ -2483,10 +3403,19 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
         state: "Completed",
         retryCount: job.RetryCount,
         nextRecoveryAction: "No recovery required.",
-        storageResult: `Approved asset ${asset.ImageGenerationAssetId} routed to timeline assembly.`,
+        storageResult: `Approved asset ${asset.ImageGenerationAssetId} routed to storyboard, asset delivery, and video readiness.`,
         modelResponse: reviewSummary
       });
-      await updateProductionState(pool, row, metadata, "assembly", "approved", 100);
+      // #region debug-point D:asset-approved
+      reportImageEngineDebug("D", "lib/image-generator-engine.ts:routeApprovedAsset", "asset approved and routed", {
+        productionId: row.ProductionId,
+        requestId: requestContext.requestId,
+        assetId: asset.ImageGenerationAssetId,
+        approvedCount,
+        target
+      });
+      // #endregion
+      await updateProductionState(pool, row, routedMetadata, "assembly", "approved", 100);
       return getImageGeneratorData();
     }
 
@@ -2522,6 +3451,16 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       storageResult: `Rejected asset ${asset.ImageGenerationAssetId}; revision requested.`,
       modelResponse: JSON.stringify({ ...parseJsonObject(job.ModelResponseJson), review: { quality: gate.quality, score: gate.score, passed: false, defects: gate.defects, audit: gate.audit } })
     });
+    // #region debug-point A:review-rejected
+    reportImageEngineDebug("A", "lib/image-generator-engine.ts:reviewRejected", "review rejected asset and requested revision", {
+      productionId: row.ProductionId,
+      requestId: requestContext.requestId,
+      assetId: asset.ImageGenerationAssetId,
+      nextRetry,
+      score: gate.score,
+      defects: gate.defects.slice(0, 4)
+    });
+    // #endregion
     await requeueVariantForRetry(pool, row, job, brief, variants, activeVariant, nextRetry, defectSummary);
     await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Revising"));
     return getImageGeneratorData();
@@ -2545,6 +3484,34 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   const { width, height } = dimensionsFromAspectRatio(brief.aspectRatio);
   const instructions = buildRenderInstructions(brief, row, width, height, providerJobId, activeVariant.VariantNumber, job.RetryCount);
   instructions.prompt = activeVariant.RenderPrompt || instructions.prompt;
+  const persistedBrief = await ensureVersionedVisualBrief(pool, requestContext.requestId, row, brief);
+  const persistedPrompt = await ensureVersionedVisualPrompt(pool, persistedBrief.briefId, instructions);
+  const providerDefaults = getVisualGenerationProviderDefaults();
+  const providerHealth = await getVisualGenerationProvider().healthCheck();
+  const routingContext = currentStoryboardRequestContext(brief, metadata);
+  const routeExplanation = {
+    requestId: requestContext.requestId,
+    workflow: providerDefaults.workflowKey,
+    provider: providerDefaults.providerId,
+    model: providerDefaults.modelDisplayName,
+    health: providerHealth,
+    storyboard: routingContext,
+    reason: providerHealth.reachable && providerHealth.modelLoaded
+      ? "Selected the healthy local photoreal image runtime for storyboard-routed generation."
+      : "Only the local photoreal image runtime is registered; proceeding with degraded health visibility so the scheduler can capture a real failure instead of faking success."
+  };
+  // #region debug-point A:provider-health
+  reportImageEngineDebug("A", "lib/image-generator-engine.ts:providerHealth", "provider health and routing evaluated", {
+    productionId: row.ProductionId,
+    requestId: requestContext.requestId,
+    provider: providerDefaults.providerId,
+    model: providerDefaults.modelDisplayName,
+    workflow: providerDefaults.workflowKey,
+    reachable: providerHealth.reachable,
+    modelLoaded: providerHealth.modelLoaded,
+    reason: routeExplanation.reason
+  });
+  // #endregion
   const renderPrompt = [
     instructions.prompt,
     `Negative prompt: ${instructions.negativePrompt}`,
@@ -2552,9 +3519,8 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     `retry:${job.RetryCount}`,
     `variant:${activeVariant.VariantNumber}`
   ].join("\n");
-  const generationProvider = instructions.mode.mode === "photoreal-human" ? PHOTO_REAL_PROVIDER : DEFAULT_PROVIDER;
-  const generationModel =
-    instructions.mode.mode === "photoreal-human" ? configuredNeuralImageModel() : DEFAULT_MODEL;
+  const generationProvider = providerDefaults.providerId;
+  const generationModel = providerDefaults.modelDisplayName;
   await pool
     .request()
     .input("jobId", sql.NVarChar(36), job.ImageGenerationJobId)
@@ -2578,11 +3544,14 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       model: generationModel,
       providerJobId,
       assignedAt: new Date().toISOString(),
-      workflow: instructions.mode.mode,
+      workflow: providerDefaults.workflowKey,
+        router: routeExplanation,
+      promptVersionNumber: persistedPrompt.versionNumber,
+      briefVersionNumber: persistedBrief.versionNumber,
       prompt: instructions.prompt,
       negativePrompt: instructions.negativePrompt,
       settings: instructions.settings,
-      method: "local diffusion render in progress"
+      method: "local provider render in progress"
     })
   });
   await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
@@ -2592,18 +3561,20 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       provider: generationProvider,
       providerJobId,
       status: "started",
-      workflow: instructions.mode.mode,
+      workflow: providerDefaults.workflowKey,
+      router: routeExplanation,
+      promptVersionNumber: persistedPrompt.versionNumber,
       prompt: instructions.prompt,
       negativePrompt: instructions.negativePrompt,
       settings: instructions.settings
     })
   });
 
-  const rendered = await renderIndependentVisual(renderPrompt, width, height, providerJobId, instructions.mode.mode !== "photoreal-human");
+  const rendered = await renderIndependentVisual(renderPrompt, width, height, providerJobId, false);
   if (!rendered) {
     const nextRetry = job.RetryCount + 1;
     const defectSummary =
-      "Local diffusion renderer timed out or failed before returning image bytes. Procedural fallback is disabled for photoreal-human briefs.";
+      "The configured real image provider timed out or failed before returning image bytes.";
     await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
       state: "Rejected",
       retryCount: nextRetry,
@@ -2613,7 +3584,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
         provider: PHOTO_REAL_PROVIDER,
         providerJobId,
         status: "rejected",
-        workflow: instructions.mode.mode,
+        workflow: providerDefaults.workflowKey,
         prompt: instructions.prompt,
         negativePrompt: instructions.negativePrompt,
         settings: instructions.settings,
@@ -2627,8 +3598,8 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
         providerJobId,
         failureReason: `Render failed after ${nextRetry} attempts. ${defectSummary}`,
         nextRecoveryAction: "Configure a stronger local photorealistic human model or reduce local render settings, then regenerate.",
-        storageResult: "Generation stopped without persisting a fallback image.",
-        modelResponse: JSON.stringify({ provider: PHOTO_REAL_PROVIDER, providerJobId, workflow: instructions.mode.mode, defects: [defectSummary] })
+        storageResult: "Generation stopped before any asset was persisted.",
+        modelResponse: JSON.stringify({ provider: PHOTO_REAL_PROVIDER, providerJobId, workflow: providerDefaults.workflowKey, defects: [defectSummary] })
       });
       await updateProductionState(pool, row, metadata, "visual-generation", "blocked", stateToProgress("Rejected"));
       return getImageGeneratorData();
@@ -2641,7 +3612,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       failureReason: `Render failed. ${defectSummary}`,
       nextRecoveryAction: "Revising visual instructions, regenerating with the local neural renderer, validating humans, checking anatomy, checking originality, then re-running quality approval.",
       storageResult: "Neural render failed; existing variant slot re-queued with revised instructions.",
-      modelResponse: JSON.stringify({ provider: PHOTO_REAL_PROVIDER, providerJobId, workflow: instructions.mode.mode, defects: [defectSummary] })
+      modelResponse: JSON.stringify({ provider: PHOTO_REAL_PROVIDER, providerJobId, workflow: providerDefaults.workflowKey, defects: [defectSummary] })
     });
     await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Revising"));
     return getImageGeneratorData();
@@ -2653,14 +3624,53 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     prompt: instructions.prompt,
     negativePrompt: instructions.negativePrompt,
     settings: instructions.settings,
-    workflow: instructions.mode.mode,
+    workflow: providerDefaults.workflowKey,
     modeReason: instructions.mode.reason,
+    promptVersionNumber: persistedPrompt.versionNumber,
+    briefVersionNumber: persistedBrief.versionNumber,
     byteLength: rendered.bytes.length,
     width: rendered.width,
     height: rendered.height,
     averageLuma: rendered.averageLuma,
     method: rendered.method
   };
+  const technicalValidation = validateTechnicalImageBytes({
+    bytes: rendered.bytes,
+    mimeType: "image/png",
+    expectedMimeType: "image/png",
+    expectedWidth: width,
+    expectedHeight: height
+  });
+  if (!technicalValidation.passed) {
+    const nextRetry = job.RetryCount + 1;
+    const defectSummary = technicalValidation.reasons.join(" ");
+    await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
+      state: "Rejected",
+      retryCount: nextRetry,
+      failureReason: `Rejected - Technical validation failed. ${defectSummary}`,
+      storageResult: "Generated bytes failed pre-persistence technical validation.",
+      providerResponse: JSON.stringify({ ...providerAudit, technicalValidation })
+    });
+    await patchJob(pool, job.ImageGenerationJobId, {
+      state: nextRetry >= MAX_RETRIES ? "Rejected" : "Revising",
+      retryCount: nextRetry,
+      providerJobId,
+      failureReason: `Technical validation failed. ${defectSummary}`,
+      nextRecoveryAction:
+        nextRetry >= MAX_RETRIES
+          ? "The real image provider repeatedly returned invalid image bytes. Repair provider configuration before retrying."
+          : "Revise instructions and request a fresh render because the returned bytes failed technical validation.",
+      storageResult: "The returned bytes were rejected before persistence because they failed technical validation.",
+      modelResponse: JSON.stringify({ ...providerAudit, technicalValidation })
+    });
+    if (nextRetry < MAX_RETRIES) {
+      await requeueVariantForRetry(pool, row, job, brief, variants, activeVariant, nextRetry, defectSummary);
+      await updateProductionState(pool, row, metadata, "visual-generation", "active", stateToProgress("Revising"));
+    } else {
+      await updateProductionState(pool, row, metadata, "visual-generation", "blocked", stateToProgress("Rejected"));
+    }
+    return getImageGeneratorData();
+  }
   await patchJob(pool, job.ImageGenerationJobId, {
     state: "Uploading",
     retryCount: job.RetryCount,
@@ -2702,7 +3712,8 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     size,
     dimensions.width,
     dimensions.height,
-    rendered.checksum
+    rendered.checksum,
+    technicalValidation
   );
   await pool.request().input("assetId", sql.NVarChar(36), assetId).input("publicUrl", sql.NVarChar(1000), createVisualAssetUrl(assetId)).query(`
     UPDATE cacsms.ImageGenerationAssets
@@ -2717,12 +3728,14 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     providerResponse: JSON.stringify({ ...providerAudit, assetId, byteLength: size })
   });
 
-  const validationErrors = await validateStoredAsset(assetId);
-  if (validationErrors.length) {
+  await setAssetTechnicalValidation(pool, assetId, technicalValidation);
+  const servedValidation = await validateStoredAsset(assetId, width, height);
+  if (!servedValidation.passed) {
+    await setAssetTechnicalValidation(pool, assetId, servedValidation);
     await patchJob(pool, job.ImageGenerationJobId, {
       state: "Failed",
       retryCount: job.RetryCount,
-      failureReason: `Asset endpoint validation failed: ${validationErrors.join(" ")}`,
+      failureReason: `Asset endpoint validation failed: ${servedValidation.reasons.join(" ")}`,
       nextRecoveryAction: "Check the API asset route, storage file, and IIS or reverse-proxy path.",
       storageResult: `Stored asset ${assetId} but the served URL was not valid.`
     });
@@ -2730,7 +3743,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
       state: "Failed",
       retryCount: job.RetryCount,
       assetId,
-      failureReason: `Asset endpoint validation failed: ${validationErrors.join(" ")}`,
+      failureReason: `Asset endpoint validation failed: ${servedValidation.reasons.join(" ")}`,
       storageResult: `Stored asset ${assetId} but the served URL was not valid.`
     });
     return getImageGeneratorData();
@@ -2796,8 +3809,11 @@ export async function loadImageGeneratorAsset(assetId: string) {
   await ensureSchema(pool);
   const asset = await imageAsset(pool, assetId);
   if (!asset) throw new Error("The requested image asset could not be found.");
-  if (!fs.existsSync(asset.StoragePath)) throw new Error("The persisted image file is missing from storage.");
-  const bytes = fs.readFileSync(asset.StoragePath);
+  const resolvedStoragePath = resolvePersistedVisualStoragePath(asset.StoragePath);
+  if (!resolvedStoragePath || !fs.existsSync(resolvedStoragePath)) {
+    throw new Error("The persisted image file is missing from storage.");
+  }
+  const bytes = fs.readFileSync(resolvedStoragePath);
   if (bytes.length <= 0) throw new Error("The persisted image file is empty.");
   if (!/^image\/(png|webp)$/i.test(asset.MimeType)) {
     throw new Error(`The persisted asset MIME type is invalid: ${asset.MimeType}.`);

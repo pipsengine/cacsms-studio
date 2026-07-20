@@ -1,6 +1,6 @@
 param(
   [string]$ServiceName = "cacsms-studio-node",
-  [string]$RootPath = "C:\Content-Generation\cacsms-studio",
+  [string]$RootPath = "C:\Next-Generation\cacsms-studio",
   [int]$InternalPort = 3018,
   [int]$PublicPort = 3008,
   [string]$NssmPath = ""

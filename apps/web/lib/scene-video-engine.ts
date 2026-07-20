@@ -547,18 +547,32 @@ function activeShot(scene: StoryboardScene | null) {
   return scene?.shots.find((shot) => shot.status === "Planning") ?? scene?.shots[0] ?? null;
 }
 
-function currentAsset(variants: VariantAssetRow[]) {
-  return (
-    variants.find(
-      (variant) =>
-        variant.ImageGenerationAssetId &&
-        variant.PublicUrl &&
-        variant.State === "Completed" &&
-        (variant.BrowserLoadStatus ?? "pending") === "loaded"
-    ) ??
-    variants.find((variant) => variant.ImageGenerationAssetId && variant.PublicUrl) ??
-    null
-  );
+function currentAsset(variants: VariantAssetRow[], preferredAssetId: string | null) {
+  const preferred =
+    (preferredAssetId
+      ? variants.find(
+          (variant) =>
+            variant.ImageGenerationAssetId === preferredAssetId &&
+            variant.PublicUrl &&
+            (variant.BrowserLoadStatus ?? "pending") === "loaded"
+        )
+      : null) ??
+    null;
+  if (preferred) return preferred;
+
+  const ranked = [...variants].sort((left, right) => {
+    const leftCompleted = left.State === "Completed" ? 1 : 0;
+    const rightCompleted = right.State === "Completed" ? 1 : 0;
+    if (rightCompleted !== leftCompleted) return rightCompleted - leftCompleted;
+    const leftLoaded = (left.BrowserLoadStatus ?? "pending") === "loaded" ? 1 : 0;
+    const rightLoaded = (right.BrowserLoadStatus ?? "pending") === "loaded" ? 1 : 0;
+    if (rightLoaded !== leftLoaded) return rightLoaded - leftLoaded;
+    const leftScore = Number.isFinite(left.QualityScore) ? Number(left.QualityScore) : -1;
+    const rightScore = Number.isFinite(right.QualityScore) ? Number(right.QualityScore) : -1;
+    if (rightScore !== leftScore) return rightScore - leftScore;
+    return new Date(right.UpdatedAt).getTime() - new Date(left.UpdatedAt).getTime();
+  });
+  return ranked.find((variant) => variant.ImageGenerationAssetId && variant.PublicUrl) ?? null;
 }
 
 function storyboardReady(snapshot: StoryboardSnapshot | null) {
@@ -987,7 +1001,7 @@ function deriveProduction(
   const generatedAt = new Date().toISOString();
   const scene = activeScene(storyboard);
   const shot = activeShot(scene);
-  const asset = currentAsset(variants);
+  const asset = currentAsset(variants, shot?.previewAssetId ?? null);
   const visualMeta = asObject(asObject(metadata.visualGeneration).brief);
   const brand = asString(visualMeta.brandProfile, asString(metadata.brandProfile, "CACSMS Corporate 2026"));
   const durationSeconds = Math.max(0, shot?.durationSeconds ?? 0);

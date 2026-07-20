@@ -57,12 +57,20 @@ import { AutonomousPublishingSchedulerPage } from "@/features/publishing/Autonom
 import { AutonomousAssignmentsPage } from "@/features/collaboration/AutonomousAssignmentsPage";
 import { ScriptEditorWorkspace } from "@/features/writing/ScriptEditorWorkspace";
 import { getScriptEditorData } from "@/lib/script-editor-data";
+import { ScriptIntelligenceWorkspace } from "@/features/writing/ScriptIntelligenceWorkspace";
+import { getScriptIntelligenceWorkspaceData } from "@/lib/script-intelligence-engine";
 import { AutonomousImageGeneratorWorkspace } from "@/features/visuals/AutonomousImageGeneratorWorkspace";
 import { getImageGeneratorData } from "@/lib/image-generator-data";
+import { VisualStudioInfrastructureWorkspace } from "@/features/visuals/VisualStudioInfrastructureWorkspace";
+import { getVisualStudioInfrastructureData, type VisualInfraMode } from "@/lib/visual-studio-infra-engine";
 import { AutonomousStoryboardWorkspace } from "@/features/storyboard/AutonomousStoryboardWorkspace";
 import { getStoryboardWorkspaceData } from "@/lib/storyboard-engine";
+import { AssetRequirementsWorkspace } from "@/features/storyboard/AssetRequirementsWorkspace";
+import { getAssetRequirementsWorkspaceData } from "@/lib/storyboard-asset-requirements-engine";
 import { AutonomousSceneVideoWorkspace } from "@/features/video/AutonomousSceneVideoWorkspace";
 import { getSceneVideoWorkspaceData } from "@/lib/scene-video-engine";
+import { VideoStudioInfrastructureWorkspace } from "@/features/video/VideoStudioInfrastructureWorkspace";
+import { getVideoStudioInfrastructureData, type VideoInfraMode } from "@/lib/video-studio-infra-engine";
 import { AutonomousNarrationWorkspace } from "@/features/audio/AutonomousNarrationWorkspace";
 import { getNarrationWorkspaceData } from "@/lib/narration-engine";
 import { AutonomousMusicWorkspace } from "@/features/audio/AutonomousMusicWorkspace";
@@ -194,6 +202,16 @@ export async function ModuleWorkspace({
     }
   }
 
+  if (module.slug === "writing" && workspace?.slug === "script-intelligence") {
+    try {
+      const data = await getScriptIntelligenceWorkspaceData();
+      return <ScriptIntelligenceWorkspace initial={data} />;
+    } catch (error) {
+      console.error("writing.script-intelligence.load.failed", error);
+      return <ScriptIntelligenceWorkspace error="The MSSQL production store is unavailable. Script intelligence will recover automatically when the connection returns." />;
+    }
+  }
+
   if (module.slug === "visuals" && workspace?.slug === "image-generator") {
     try {
       const data = await getImageGeneratorData();
@@ -203,6 +221,27 @@ export async function ModuleWorkspace({
       return (
         <AutonomousImageGeneratorWorkspace error="The MSSQL production store is unavailable. Visual generation will recover automatically when the connection returns." />
       );
+    }
+  }
+
+  const visualInfraModes: Record<string, VisualInfraMode> = {
+    "generation-queue": "generation-queue",
+    "visual-brief-resolver": "visual-brief-resolver",
+    "prompt-intelligence": "prompt-intelligence",
+    "regional-visual-intelligence": "regional-visual-intelligence",
+    "model-and-workflow-manager": "model-and-workflow-manager",
+    "reference-conditioning": "reference-conditioning",
+    "image-repair-and-enhancement": "image-repair-and-enhancement",
+    "rights-and-provenance": "rights-and-provenance"
+  };
+
+  if (module.slug === "visuals" && workspace?.slug && visualInfraModes[workspace.slug]) {
+    try {
+      const data = await getVisualStudioInfrastructureData();
+      return <VisualStudioInfrastructureWorkspace initial={data} mode={visualInfraModes[workspace.slug]} />;
+    } catch (error) {
+      console.error(`visuals.${workspace.slug}.load.failed`, error);
+      return <VisualStudioInfrastructureWorkspace error="The MSSQL production store is unavailable. Visual infrastructure will recover automatically when the connection returns." mode={visualInfraModes[workspace.slug]} />;
     }
   }
 
@@ -218,6 +257,26 @@ export async function ModuleWorkspace({
     }
   }
 
+  if (module.slug === "storyboard" && workspace?.slug === "visual-requirement-resolver") {
+    try {
+      const data = await getAssetRequirementsWorkspaceData();
+      return <AssetRequirementsWorkspace initial={data} mode="resolver" />;
+    } catch (error) {
+      console.error("storyboard.visual-requirement-resolver.load.failed", error);
+      return <AssetRequirementsWorkspace error="The MSSQL production store is unavailable. Asset requirement resolution will recover automatically when the connection returns." mode="resolver" />;
+    }
+  }
+
+  if (module.slug === "storyboard" && workspace?.slug === "asset-requirement-matrix") {
+    try {
+      const data = await getAssetRequirementsWorkspaceData();
+      return <AssetRequirementsWorkspace initial={data} mode="matrix" />;
+    } catch (error) {
+      console.error("storyboard.asset-requirement-matrix.load.failed", error);
+      return <AssetRequirementsWorkspace error="The MSSQL production store is unavailable. Asset requirement matrix generation will recover automatically when the connection returns." mode="matrix" />;
+    }
+  }
+
   if (module.slug === "video" && workspace?.slug === "scene-video-generator") {
     try {
       const data = await getSceneVideoWorkspaceData();
@@ -227,6 +286,21 @@ export async function ModuleWorkspace({
       return (
         <AutonomousSceneVideoWorkspace error="The MSSQL production store is unavailable. Scene video generation will recover automatically when the connection returns." />
       );
+    }
+  }
+
+  const videoInfraModes: Record<string, VideoInfraMode> = {
+    "motion-consistency": "motion-consistency",
+    "video-repair-and-enhancement": "video-repair-and-enhancement"
+  };
+
+  if (module.slug === "video" && workspace?.slug && videoInfraModes[workspace.slug]) {
+    try {
+      const data = await getVideoStudioInfrastructureData();
+      return <VideoStudioInfrastructureWorkspace initial={data} mode={videoInfraModes[workspace.slug]} />;
+    } catch (error) {
+      console.error(`video.${workspace.slug}.load.failed`, error);
+      return <VideoStudioInfrastructureWorkspace error="The MSSQL production store is unavailable. Video infrastructure will recover automatically when the connection returns." mode={videoInfraModes[workspace.slug]} />;
     }
   }
 

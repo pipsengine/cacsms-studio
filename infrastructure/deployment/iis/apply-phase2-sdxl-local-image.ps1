@@ -1,7 +1,7 @@
 param(
   [string]$NodeServiceName = "cacsms-studio-node",
   [string]$DaemonServiceName = "cacsms-studio-image-daemon",
-  [string]$RootPath = "C:\Content-Generation\cacsms-studio",
+  [string]$RootPath = "C:\Next-Generation\cacsms-studio",
   [int]$InternalPort = 3018,
   [int]$PublicPort = 3008,
   [int]$DaemonPort = 3025,

@@ -1,6 +1,6 @@
 param(
   [string]$ServiceName = "cacsms-studio-image-daemon",
-  [string]$RootPath = "C:\Content-Generation\cacsms-studio",
+  [string]$RootPath = "C:\Next-Generation\cacsms-studio",
   [int]$DaemonPort = 3025,
   [string]$NssmPath = ""
 )

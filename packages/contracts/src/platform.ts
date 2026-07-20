@@ -220,6 +220,7 @@ export const navigationModules: NavigationModule[] = [
       "Social Script Writer",
       "Title and Hook Generator",
       "Call-to-Action Builder",
+      "Script Intelligence",
       "Versions",
       "Reviews",
       "Approvals",
@@ -265,6 +266,8 @@ export const navigationModules: NavigationModule[] = [
       "Motion Planner",
       "Transition Planner",
       "Text and Graphics Planner",
+      "Visual Requirement Resolver",
+      "Asset Requirement Matrix",
       "Storyboard Editor",
       "Scene Sequencer",
       "Preview",
@@ -278,9 +281,13 @@ export const navigationModules: NavigationModule[] = [
     description: "Image, character, environment, prop, historical, illustration, diagram, infographic, chart, map, and brand visuals.",
     children: [
       "Visual Dashboard",
-      "Image Generator",
+      "Autonomous Image Generator",
+      "Generation Queue",
+      "Visual Brief Resolver",
+      "Prompt Intelligence",
       "Character Studio",
       "Character Consistency",
+      "Regional Visual Intelligence",
       "Environment Studio",
       "Object and Prop Studio",
       "Historical Reconstruction",
@@ -292,10 +299,14 @@ export const navigationModules: NavigationModule[] = [
       "Presentation Graphics",
       "Product Visuals",
       "Thumbnail Studio",
+      "Model & Workflow Manager",
+      "Reference Conditioning",
+      "Image Repair & Enhancement",
       "Brand Style Manager",
       "Prompt Library",
       "Batch Generation",
       "Visual QA",
+      "Rights & Provenance",
       "Export"
     ].map(toChild)
   },
@@ -319,6 +330,8 @@ export const navigationModules: NavigationModule[] = [
       "Motion Graphics",
       "Visual Effects",
       "Colour Grading",
+      "Motion Consistency",
+      "Video Repair & Enhancement",
       "Scene Editor",
       "Preview",
       "Render Queue",
@@ -704,5 +717,8 @@ export function toSlug(label: string) {
 }
 
 function toChild(label: string) {
-  return { label, slug: toSlug(label) };
+  const overrides: Record<string, string> = {
+    "Autonomous Image Generator": "image-generator"
+  };
+  return { label, slug: overrides[label] ?? toSlug(label) };
 }

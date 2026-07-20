@@ -1,5 +1,5 @@
 param(
-  [string]$RootPath = "C:\Content-Generation\cacsms-studio",
+  [string]$RootPath = "C:\Next-Generation\cacsms-studio",
   [int]$InternalPort = 3018,
   [int]$PublicPort = 3008
 )
