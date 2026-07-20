@@ -254,45 +254,67 @@ def configure_offline_mode() -> None:
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 
+CLIP_POSITIVE_WORD_LIMIT = 45
+CLIP_NEGATIVE_WORD_LIMIT = 50
+
+
+def clip_word_limit(text: str, max_words: int) -> str:
+    words = [word for word in " ".join(text.replace("\n", " ").split()).split(" ") if word]
+    if len(words) <= max_words:
+        return " ".join(words)
+    return " ".join(words[:max_words])
+
+
+def extract_prompt_segment(prompt_head: str, marker: str, max_sentences: int = 1) -> str:
+    if marker not in prompt_head:
+        return ""
+    segment = prompt_head.split(marker, 1)[1].strip()
+    if max_sentences <= 1:
+        return segment.split(".", 1)[0].strip()
+    parts = [part.strip() for part in segment.split(".") if part.strip()]
+    return ". ".join(parts[:max_sentences]).strip()
+
+
 def build_diffusion_prompts(prompt: str) -> tuple[str, str]:
     prompt_head = prompt.split("Negative prompt:", 1)[0]
     prompt_head = " ".join(prompt_head.replace("\n", " ").split())
-    locale_bits = []
-    for marker in ("Locale:", "Regional realism:", "Language/signage/currency constraints:", "Cultural integrity:"):
-        if marker in prompt_head:
-            segment = prompt_head.split(marker, 1)[1].split(".", 2)[0]
-            locale_bits.append(f"{marker} {segment}".strip())
-    if len(prompt_head) > 620:
-        prompt_head = prompt_head[:620].rsplit(" ", 1)[0]
+
+    scene_core = extract_prompt_segment(prompt_head, "Photorealistic documentary photograph of", 1)
+    if not scene_core:
+        scene_core = extract_prompt_segment(prompt_head, "Production context:", 1)
+    if not scene_core:
+        scene_core = prompt_head.split(".", 1)[0].strip()
+    if scene_core.lower().startswith("a "):
+        scene_core = scene_core[2:]
+    scene_core = clip_word_limit(scene_core.rstrip("."), 18)
+
+    locale_hint = extract_prompt_segment(prompt_head, "Locale:", 1)
+    locale_city = ""
+    if locale_hint:
+        locale_city = locale_hint.split(">", 2)[-1].strip().split(">", 1)[0].strip()
+
+    locale_bits = f"Lagos Nigeria, {locale_city}" if locale_city else "Lagos Nigeria"
     enhanced = (
-        "photorealistic documentary photograph, ultra-sharp natural human faces as the primary focal priority, "
-        "one or two Black Nigerian West African business professionals in foreground with large readable faces, "
-        "symmetrical natural face structure, detailed eyes with visible pupils and catchlights, natural skin pores and texture, "
-        "unique original synthetic identity per person, no celebrity likeness, no duplicated faces, "
-        "natural nose, lips, ears and jawline without distortion, complete head visible with headroom, "
-        "visible hands with five distinct fingers when hands appear, correct hand anatomy, "
-        "contemporary Lagos Nigerian corporate technology workplace, AI shown only as software dashboards on screens, "
-        "medium-wide 35mm documentary camera, moderate depth of field with sharp facial detail on subjects, "
-        f"{' '.join(locale_bits)} {prompt_head}"
+        f"photorealistic documentary photo, {scene_core}, {locale_bits}, "
+        "Black Nigerian business professionals, corporate AI office, sharp natural faces, detailed eyes, 35mm wide shot"
     )
     negative = (
-        "deformed face, disfigured face, ugly face, bad face, melted face, smudged face, blurry face, "
-        "asymmetric eyes, cross-eyed, lazy eye, mismatched eyes, distorted eyes, dead eyes, "
-        "plastic skin, waxy skin, doll face, mannequin face, fake face, ai generated face, "
-        "cartoon, illustration, icon, flat vector, anime, painting, sketch, "
-        "malformed hands, fused fingers, extra fingers, missing fingers, mutated hands, bad anatomy, "
-        "watermark, logo, text, low quality, soft focus, "
-        "cyborg, robot, mechanical face, cybernetic implant, sci-fi face, "
-        "face mask, masked face, helmet, visor, "
-        "celebrity likeness, duplicated face, cloned face, "
-        "traditional costume, ceremonial attire, head wrap, "
-        "generic western office portrait, passport photo, beauty portrait, extreme close-up"
+        "deformed face, blurry face, cartoon, illustration, anime, bad hands, extra fingers, "
+        "cyborg, robot, mask, helmet, watermark, text, low quality, beauty portrait"
     )
     if "Negative prompt:" in prompt:
-        supplied = prompt.split("Negative prompt:", 1)[1].strip()
+        supplied = clip_word_limit(prompt.split("Negative prompt:", 1)[1].strip(), 24)
         if supplied:
             negative = f"{negative}, {supplied}"
     return enhanced, negative
+
+
+def limit_prompt_to_tokenizer(pipe, text: str, max_length: int = 75) -> str:
+    tokenizer = getattr(pipe, "tokenizer", None)
+    if tokenizer is None:
+        return clip_word_limit(text, 40)
+    tokenized = tokenizer(text, truncation=True, max_length=max_length, return_tensors=None)
+    return tokenizer.decode(tokenized["input_ids"], skip_special_tokens=True).strip(" ,")
 
 
 _pipeline = None
@@ -409,6 +431,8 @@ def run_diffusion_inference(pipe, prompt: str, output: Path, width: int, height:
     guidance = float(os.environ.get("CACSMS_LOCAL_IMAGE_GUIDANCE", default_guidance))
     render_width, render_height = diffusion_dimensions(width, height)
     enhanced, negative = build_diffusion_prompts(prompt)
+    enhanced = limit_prompt_to_tokenizer(pipe, enhanced, 75)
+    negative = limit_prompt_to_tokenizer(pipe, negative, 75)
     generator = torch.Generator(device=device).manual_seed(seed_to_int(seed))
     result = pipe(
         prompt=enhanced,

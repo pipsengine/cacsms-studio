@@ -11,6 +11,20 @@ from PIL import Image
 from transformers import CLIPModel, CLIPProcessor
 
 
+def to_jsonable(value):
+    if isinstance(value, dict):
+        return {key: to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_jsonable(item) for item in value]
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    return value
+
+
 LABELS = {
     "photoreal_humans": "a photorealistic documentary photograph with visible adult people, realistic faces and visible hands",
     "empty_environment": "an empty industrial factory or operations control room with no people visible",
@@ -281,7 +295,7 @@ def main() -> None:
         "passedNaturalHuman": not robotic_feature_risk,
         "passedRegionalAppearance": regional_appearance_pass,
     }
-    print(json.dumps(result, separators=(",", ":")))
+    print(json.dumps(to_jsonable(result), separators=(",", ":")))
 
 
 if __name__ == "__main__":
