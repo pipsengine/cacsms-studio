@@ -1,72 +1,38 @@
-import type { NavigationModule, WorkflowStage } from "./types";
+import type { NavigationModule } from "./types";
 
-export const productionPipeline: Array<{ id: WorkflowStage; label: string; description: string }> = [
+export { productionPipeline } from "./production-lifecycle";
+
+export const navigationModuleGroups = [
   {
-    id: "discover",
-    label: "Discover",
-    description: "Scan audience, market, and knowledge signals for production opportunities."
+    label: "Studio",
+    slugs: [
+      "dashboard",
+      "productions",
+      "intelligence",
+      "opportunity-intelligence",
+      "knowledge-universe",
+      "writing",
+      "story-learning",
+      "storyboard",
+      "visuals",
+      "video",
+      "audio",
+      "timeline"
+    ]
   },
   {
-    id: "research",
-    label: "Research",
-    description: "Research, corroborate, and verify the opportunity and its supporting evidence."
+    label: "AI & Automation",
+    slugs: ["agents", "automation"]
   },
   {
-    id: "evaluate",
-    label: "Evaluate",
-    description: "Score, validate, and prioritize the production opportunity."
+    label: "Analytics & Management",
+    slugs: ["quality", "exports", "publishing", "assets", "templates", "analytics", "collaboration", "integrations"]
   },
   {
-    id: "pre-plan",
-    label: "Pre-Plan",
-    description: "Define format, audience, channels, structure, and production requirements."
-  },
-  {
-    id: "schedule",
-    label: "Schedule",
-    description: "Plan the timeline, assignments, dependencies, and publication dates."
-  },
-  {
-    id: "produce",
-    label: "Produce",
-    description: "Create the script, visual, video, voice, music, and sound assets."
-  },
-  {
-    id: "assemble",
-    label: "Assemble",
-    description: "Build the timeline and integrate all production assets."
-  },
-  {
-    id: "quality",
-    label: "Quality",
-    description: "Run AI and human quality, compliance, and safety reviews."
-  },
-  {
-    id: "export",
-    label: "Export",
-    description: "Render and package the approved production deliverables."
-  },
-  {
-    id: "publish",
-    label: "Publish",
-    description: "Distribute approved outputs to configured publishing channels."
-  },
-  {
-    id: "monitor",
-    label: "Monitor",
-    description: "Track audience and production performance in real time."
-  },
-  {
-    id: "learn",
-    label: "Learn",
-    description: "Use verified outcomes to improve the autonomous production system."
-  },
-  {
-    id: "repeat",
-    label: "Repeat",
-    description: "Feed learning back into continuous opportunity discovery."
+    label: "Administration",
+    slugs: ["administration", "settings"]
   }
-];
+] as const;
 
 export const navigationModules: NavigationModule[] = [
   {

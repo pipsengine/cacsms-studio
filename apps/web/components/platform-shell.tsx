@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type React from "react";
 import { usePathname } from "next/navigation";
+<<<<<<< Updated upstream
 import {
   Activity,
   Bot,
@@ -92,6 +93,11 @@ const moduleGroups = [
     slugs: ["administration", "settings"]
   }
 ];
+=======
+import { ChevronDown, ChevronRight, Settings } from "lucide-react";
+import { navigationModuleGroups, navigationModules } from "@cacsms/contracts";
+import { getNavigationIcon } from "@/lib/navigation-icons";
+>>>>>>> Stashed changes
 
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -101,9 +107,13 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     (pathname.startsWith("/home/") ? navigationModules.find((module) => module.slug === "dashboard") : undefined) ??
     (pathname.startsWith("/production-studio") ? navigationModules.find((module) => module.slug === "productions") : undefined) ??
     (pathname.startsWith("/content-intelligence") ? navigationModules.find((module) => module.slug === "intelligence") : undefined) ??
+    (pathname.startsWith("/opportunity-intelligence") ? navigationModules.find((module) => module.slug === "opportunity-intelligence") : undefined) ??
+    (pathname.startsWith("/knowledge-universe") ? navigationModules.find((module) => module.slug === "knowledge-universe") : undefined) ??
+    (pathname.startsWith("/production-workflow") ? navigationModules.find((module) => module.slug === "dashboard") : undefined) ??
     navigationModules.find((module) => pathname === `/${module.slug}` || pathname.startsWith(`/${module.slug}/`)) ??
     navigationModules.find((module) => module.slug === "dashboard");
   const [openModule, setOpenModule] = useState<string | null>(activeModule?.slug ?? "dashboard");
+<<<<<<< Updated upstream
   const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname.startsWith("/home/") || pathname.startsWith("/production-studio") || pathname.startsWith("/content-intelligence") || pathname.startsWith("/opportunity-intelligence");
   const hideWorkspaceHeader =
     pathname.startsWith("/writing/script-editor") ||
@@ -112,9 +122,24 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/video/scene-video-generator") ||
     pathname.startsWith("/audio/narration-generator") ||
     pathname.startsWith("/audio/music-generator");
+=======
+  const [collapsed, setCollapsed] = useState(false);
+  const dashboardRoute =
+    pathname === "/" ||
+    pathname === "/dashboard" ||
+    pathname.startsWith("/dashboard/") ||
+    pathname.startsWith("/home/") ||
+    pathname.startsWith("/production-studio") ||
+    pathname.startsWith("/content-intelligence") ||
+    pathname.startsWith("/opportunity-intelligence") ||
+    pathname.startsWith("/knowledge-universe") ||
+    pathname.startsWith("/production-workflow") ||
+    pathname.startsWith("/coming-soon");
+
+>>>>>>> Stashed changes
   const groupedModules = useMemo(
     () =>
-      moduleGroups.map((group) => ({
+      navigationModuleGroups.map((group) => ({
         ...group,
         modules: group.slugs
           .map((slug) => navigationModules.find((module) => module.slug === slug))
@@ -159,7 +184,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     : "Loading Nigeria local date";
 
   return (
-    <div className="shell">
+    <div className={`shell${collapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar" aria-label="Studio navigation">
         <div className="brand-row">
           <Link className="brand" href="/dashboard" prefetch={false} aria-label="CACSMS dashboard">
@@ -173,7 +198,13 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
               <small>Autonomous Media Studio</small>
             </span>
           </Link>
-          <button className="sidebar-toggle" type="button" aria-label="Sidebar menu">
+          <button
+            className="sidebar-toggle"
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-pressed={collapsed}
+            onClick={() => setCollapsed((value) => !value)}
+          >
             <span />
             <span />
             <span />
@@ -185,11 +216,8 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
             <div className="nav-group" key={group.label}>
               <div className="nav-label">{group.label}</div>
               {group.modules.map((module) => {
-                const sourceIndex = navigationModules.findIndex((item) => item.slug === module.slug);
-                const Icon = icons[sourceIndex] ?? Boxes;
-                const isActive = pathname === "/production-studio/create-production"
-                  ? module.slug === "dashboard"
-                  : activeModule?.slug === module.slug;
+                const Icon = getNavigationIcon(module.slug);
+                const isActive = activeModule?.slug === module.slug;
                 const isOpen = openModule === module.slug;
                 return (
                   <details
@@ -272,26 +300,68 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
 }
 
 function hrefForChild(moduleSlug: string, childSlug: string) {
+  if (moduleSlug === "dashboard" && childSlug === "executive-dashboard") {
+    return "/dashboard/executive-dashboard";
+  }
+  if (moduleSlug === "dashboard" && childSlug === "my-workspace") {
+    return "/dashboard/my-workspace";
+  }
+  if (moduleSlug === "dashboard" && childSlug === "active-productions") {
+    return "/dashboard/active-productions";
+  }
+  if (moduleSlug === "dashboard" && childSlug === "recent-productions") {
+    return "/dashboard/recent-productions";
+  }
   if (moduleSlug === "dashboard" && childSlug === "production-workflow") {
     return "/production-workflow/discover";
   }
   if (moduleSlug === "dashboard" && childSlug === "production-pipeline") {
+<<<<<<< Updated upstream
     return "/home/production-pipeline";
+=======
+    return "/production-workflow/discover";
+>>>>>>> Stashed changes
   }
-  if (moduleSlug === "dashboard" && ["rendering-monitor", "agent-activity", "publishing-overview", "calendar", "notifications", "system-health"].includes(childSlug)) {
+  if (
+    moduleSlug === "dashboard" &&
+    ["rendering-monitor", "agent-activity", "publishing-overview", "calendar", "notifications", "system-health"].includes(childSlug)
+  ) {
     return `/home/${childSlug}`;
   }
   if (moduleSlug === "productions" && childSlug === "production-pipeline") {
+<<<<<<< Updated upstream
     return "/home/production-pipeline";
+=======
+    return "/production-workflow/discover";
   }
-  if (moduleSlug === "productions") return `/production-studio/${childSlug}`;
-  if (moduleSlug === "intelligence") return `/content-intelligence/${childSlug}`;
+  if (moduleSlug === "productions" && childSlug === "create-production") {
+    return "/production-studio/create-production";
+  }
+  if (moduleSlug === "productions") {
+    return `/production-studio/${childSlug}`;
+  }
+  if (moduleSlug === "intelligence") {
+    return `/content-intelligence/${childSlug}`;
+  }
+  if (moduleSlug === "opportunity-intelligence") {
+    return `/opportunity-intelligence/${childSlug}`;
+  }
+  if (moduleSlug === "knowledge-universe") {
+    return `/knowledge-universe/${childSlug}`;
+  }
+  if (moduleSlug === "settings" && childSlug === "production-defaults") {
+    return "/settings/production-defaults";
+>>>>>>> Stashed changes
+  }
   return `/${moduleSlug}/${childSlug}`;
 }
 
 function hrefForModule(moduleSlug: string) {
   if (moduleSlug === "productions") return "/production-studio";
   if (moduleSlug === "intelligence") return "/content-intelligence";
+  if (moduleSlug === "opportunity-intelligence") return "/opportunity-intelligence";
+  if (moduleSlug === "knowledge-universe") return "/knowledge-universe/executive-dashboard";
+  if (moduleSlug === "dashboard") return "/dashboard";
   return `/${moduleSlug}`;
 }
 

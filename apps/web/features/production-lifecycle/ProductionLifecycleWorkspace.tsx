@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+<<<<<<< Updated upstream
   ArrowLeft, ArrowRight, BarChart3, Brain, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight,
   CircleDot, ClipboardCheck, FileOutput, FileText, Gauge, Infinity, Layers3, Link2, Monitor, PlaySquare,
   Rocket, Search, Settings2, ShieldCheck, Sparkles, Target, UsersRound
@@ -95,10 +96,97 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
       window.removeEventListener("resize", update);
     };
   }, [stage.id]);
+=======
+  ArrowLeft,
+  ArrowRight,
+  BarChart3,
+  Brain,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleDot,
+  ClipboardCheck,
+  FileOutput,
+  FileText,
+  Gauge,
+  Infinity,
+  Layers3,
+  Monitor,
+  PlaySquare,
+  Rocket,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  UsersRound
+} from "lucide-react";
+import {
+  lifecyclePhases,
+  productionLifecycleStages,
+  type LifecyclePhase,
+  type ProductionLifecycleStage
+} from "@cacsms/contracts";
+import type { LifecycleChecklistItem, ProductionLifecycleSnapshot } from "@/types/production-lifecycle";
+import { isWorkspaceRouteImplemented } from "@/lib/workspace-routes";
+import styles from "./ProductionLifecycleWorkspace.module.css";
+
+const icons = {
+  discover: Target,
+  research: Search,
+  evaluate: ClipboardCheck,
+  "pre-plan": FileText,
+  schedule: CalendarDays,
+  produce: PlaySquare,
+  assemble: Layers3,
+  quality: ShieldCheck,
+  export: FileOutput,
+  publish: Rocket,
+  monitor: BarChart3,
+  learn: Brain,
+  repeat: Infinity
+} as const;
+
+const phaseNames: Record<LifecyclePhase, string> = {
+  intelligence: "Intelligence",
+  planning: "Planning",
+  creation: "Creation",
+  release: "Release",
+  improvement: "Improvement"
+};
+
+const checklistLabels: Record<LifecycleChecklistItem, string> = {
+  "required-work-completed": "Required work completed",
+  "validation-checks-passed": "Validation checks passed",
+  "exceptions-resolved": "Exceptions and blockers resolved",
+  "stage-output-recorded": "Stage output recorded",
+  "next-stage-ready": "Next stage is ready"
+};
+
+export function ProductionLifecycleWorkspace({ stage }: { stage: ProductionLifecycleStage }) {
+  const [role, setRole] = useState<"all" | "primary" | "supporting">("all");
+  const [snapshot, setSnapshot] = useState<ProductionLifecycleSnapshot | null>(null);
+  const [checklist, setChecklist] = useState<Record<LifecycleChecklistItem, boolean>>({
+    "required-work-completed": false,
+    "validation-checks-passed": false,
+    "exceptions-resolved": false,
+    "stage-output-recorded": false,
+    "next-stage-ready": false
+  });
+  const [saving, setSaving] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+>>>>>>> Stashed changes
 
   const currentIndex = productionLifecycleStages.findIndex((item) => item.id === stage.id);
   const previous = productionLifecycleStages[currentIndex - 1];
   const next = productionLifecycleStages[currentIndex + 1];
+<<<<<<< Updated upstream
+=======
+  const autoAdvance = snapshot?.settings.autoAdvance ?? true;
+
+>>>>>>> Stashed changes
   const grouped = useMemo(() => {
     const pages = role === "all" ? stage.pages : stage.pages.filter((item) => item.role === role);
     return pages.reduce<Record<string, typeof pages>>((groups, item) => {
@@ -107,6 +195,7 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
     }, {});
   }, [role, stage.pages]);
 
+<<<<<<< Updated upstream
   async function toggleAutoAdvance() {
     const nextValue = !autoAdvance;
     setStatus((current) => current ? { ...current, settings: { ...current.settings, autoAdvanceEnabled: nextValue } } : current);
@@ -141,29 +230,126 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
     } catch {
       setMarkReadyState("error");
       setMarkReadyError("Network error while marking stage ready.");
+=======
+  const stageStatuses = useMemo(() => {
+    const map = new Map(snapshot?.stages.map((item) => [item.id, item.statusLabel]) ?? []);
+    return productionLifecycleStages.map((item) => map.get(item.id) ?? item.statusLabel);
+  }, [snapshot?.stages]);
+
+  const loadSnapshot = useCallback(async () => {
+    const [lifecycleResponse, checklistResponse] = await Promise.all([
+      fetch("/api/production-lifecycle"),
+      fetch(`/api/production-lifecycle/${stage.id}`)
+    ]);
+    const lifecyclePayload = (await lifecycleResponse.json()) as ProductionLifecycleSnapshot;
+    const checklistPayload = await checklistResponse.json();
+    setSnapshot(lifecyclePayload);
+    if (checklistPayload.checklist?.state?.checklist) {
+      setChecklist(checklistPayload.checklist.state.checklist);
+    }
+  }, [stage.id]);
+
+  useEffect(() => {
+    loadSnapshot().catch(() => setStatusMessage("Unable to load lifecycle data."));
+  }, [loadSnapshot]);
+
+  async function toggleAutoAdvance() {
+    if (!snapshot) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/production-lifecycle", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoAdvance: !autoAdvance, currentStageId: stage.id })
+      });
+      const payload = await response.json();
+      setSnapshot((current) =>
+        current
+          ? {
+              ...current,
+              settings: payload.settings
+            }
+          : current
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateChecklistItem(item: LifecycleChecklistItem, checked: boolean) {
+    const nextChecklist = { ...checklist, [item]: checked };
+    setChecklist(nextChecklist);
+    await fetch(`/api/production-lifecycle/${stage.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update-checklist", checklist: { [item]: checked } })
+    });
+  }
+
+  async function markStageReady() {
+    setSaving(true);
+    setStatusMessage(null);
+    try {
+      const response = await fetch(`/api/production-lifecycle/${stage.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark-ready" })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error("mark-ready failed");
+      setChecklist(payload.state.checklist);
+      setStatusMessage(payload.advancedTo ? `Stage ready. Advanced to ${payload.advancedTo}.` : "Stage marked ready.");
+      await loadSnapshot();
+    } catch {
+      setStatusMessage("Unable to mark stage ready.");
+    } finally {
+      setSaving(false);
+>>>>>>> Stashed changes
     }
   }
 
   function scrollRail(direction: "left" | "right") {
+<<<<<<< Updated upstream
     scrollerRef.current?.scrollBy({ left: direction === "left" ? -420 : 420, behavior: "smooth" });
+=======
+    railRef.current?.scrollBy({ left: direction === "left" ? -280 : 280, behavior: "smooth" });
+>>>>>>> Stashed changes
   }
 
   return (
     <section className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
+<<<<<<< Updated upstream
           <span>Production Workflow <i>/</i> Stage {stage.order} of 13</span>
+=======
+          <span>
+            Production Workflow <i>/</i> Stage {stage.order} of 13
+          </span>
+>>>>>>> Stashed changes
           <h1>{stage.label}</h1>
           <p>{stage.description}</p>
         </div>
         <div className={styles.headerActions}>
+<<<<<<< Updated upstream
           <Link href="/production-pipeline/index.html"><Gauge size={16} />Pipeline Overview</Link>
           <Link className={styles.primary} href={stage.pages[0]?.href ?? "/dashboard"}><ArrowRight size={16} />Open Primary Workspace</Link>
+=======
+          <Link href="/dashboard">
+            <Gauge size={16} />
+            Pipeline Overview
+          </Link>
+          <Link className={styles.primary} href={stage.pages[0]?.href ?? "/production-studio/create-production"}>
+            <ArrowRight size={16} />
+            Open Primary Workspace
+          </Link>
+>>>>>>> Stashed changes
         </div>
       </header>
 
       <section className={styles.lifecycle} aria-label="Production life cycle">
         <header>
+<<<<<<< Updated upstream
           <div><h2>Production Life Cycle</h2><p>Navigate the end-to-end autonomous production workflow.</p></div>
           <label>Auto-Advance
             <button type="button" role="switch" aria-checked={autoAdvance} className={autoAdvance ? styles.switchOn : styles.switch} onClick={() => void toggleAutoAdvance()}><span /></button>
@@ -225,10 +411,125 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
             ))}
           </div>
         )}
+=======
+          <div>
+            <h2>Production Life Cycle</h2>
+            <p>Navigate the end-to-end autonomous production workflow.</p>
+          </div>
+          <label>
+            Auto-Advance{" "}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoAdvance}
+              disabled={saving}
+              className={autoAdvance ? styles.switchOn : styles.switch}
+              onClick={toggleAutoAdvance}
+            >
+              <span />
+            </button>
+          </label>
+          <Link href="/settings/production-defaults">
+            <Settings2 size={14} />
+            Configure
+          </Link>
+        </header>
+
+        <div className={styles.phaseBand}>
+          {lifecyclePhases.map((phase) => (
+            <span key={phase.id} data-active={phase.id === stage.phase} data-phase={phase.id}>
+              {phase.label}
+              <small>{phase.description}</small>
+            </span>
+          ))}
+        </div>
+
+        <div className={styles.stageRailShell}>
+          <button type="button" className={styles.railScrollBtn} aria-label="Scroll lifecycle left" onClick={() => scrollRail("left")}>
+            <ChevronLeft size={18} />
+          </button>
+          <div className={styles.stageRail} ref={railRef}>
+            {productionLifecycleStages.map((item, index) => {
+              const Icon = icons[item.id];
+              const complete = item.order < stage.order;
+              const isActive = item.id === stage.id;
+              return (
+                <div className={styles.stageWrap} key={item.id}>
+                  <Link
+                    href={`/production-workflow/${item.id}`}
+                    className={`${styles.stage}${isActive ? ` ${styles.active}` : ""}${complete ? ` ${styles.complete}` : ""}`}
+                    data-phase={item.phase}
+                    aria-current={isActive ? "step" : undefined}
+                    title={item.description}
+                  >
+                    <b>{item.order}</b>
+                    <i>
+                      <Icon size={21} />
+                    </i>
+                    <strong>{item.label}</strong>
+                    <small>{item.description}</small>
+                    <em>{stageStatuses[index]}</em>
+                  </Link>
+                  {index < productionLifecycleStages.length - 1 ? (
+                    <ChevronRight className={styles.arrow} size={18} aria-hidden="true" />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <button type="button" className={styles.railScrollBtn} aria-label="Scroll lifecycle right" onClick={() => scrollRail("right")}>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </section>
+
+      <section className={styles.stageSummary}>
+        <article>
+          <i>
+            <CircleDot size={22} />
+          </i>
+          <span>
+            <small>Current phase</small>
+            <b>{phaseNames[stage.phase]}</b>
+            <em>Stage {stage.order} of 13</em>
+          </span>
+        </article>
+        <article>
+          <i>
+            <CheckCircle2 size={22} />
+          </i>
+          <span>
+            <small>Required outcome</small>
+            <b>{stage.outcome}</b>
+            <em>Complete this outcome before advancing.</em>
+          </span>
+        </article>
+        <article>
+          <i>
+            <UsersRound size={22} />
+          </i>
+          <span>
+            <small>Connected workspaces</small>
+            <b>{stage.pages.length} canonical pages</b>
+            <em>{new Set(stage.pages.map((item) => item.module)).size} capability modules</em>
+          </span>
+        </article>
+        <article>
+          <i>
+            <Sparkles size={22} />
+          </i>
+          <span>
+            <small>Automation policy</small>
+            <b>{autoAdvance ? "Auto-advance enabled" : "Manual advancement"}</b>
+            <em>{snapshot?.source === "live" ? "Live studio counts connected." : "Using fallback counts until database is available."}</em>
+          </span>
+        </article>
+>>>>>>> Stashed changes
       </section>
 
       <div className={styles.contentGrid}>
         <main>
+<<<<<<< Updated upstream
           <section className={styles.queuePanel}>
             <header><div><h2>Live queue · {productionLifecycleStages.find((s) => s.id === queueStage)?.label ?? stage.label}</h2><p>{queue.length} item(s) from MSSQL</p></div></header>
             {queue.length === 0 ? <p className={styles.queueEmpty}>No active items in this stage.</p> : (
@@ -249,11 +550,29 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
               <button className={role === "all" ? styles.selected : ""} onClick={() => setRole("all")}>All</button>
               <button className={role === "primary" ? styles.selected : ""} onClick={() => setRole("primary")}>Primary</button>
               <button className={role === "supporting" ? styles.selected : ""} onClick={() => setRole("supporting")}>Supporting</button>
+=======
+          <header className={styles.directoryHeader}>
+            <div>
+              <h2>{stage.label} workspace directory</h2>
+              <p>Open the existing canonical page needed for this stage. Unimplemented pages show a coming-soon state.</p>
+            </div>
+            <div>
+              <button className={role === "all" ? styles.selected : ""} onClick={() => setRole("all")}>
+                All
+              </button>
+              <button className={role === "primary" ? styles.selected : ""} onClick={() => setRole("primary")}>
+                Primary
+              </button>
+              <button className={role === "supporting" ? styles.selected : ""} onClick={() => setRole("supporting")}>
+                Supporting
+              </button>
+>>>>>>> Stashed changes
             </div>
           </header>
           <div className={styles.moduleGroups}>
             {Object.entries(grouped).map(([module, pages]) => (
               <section key={module}>
+<<<<<<< Updated upstream
                 <header><h3>{module}</h3><span>{pages.length} page{pages.length === 1 ? "" : "s"}</span></header>
                 <div>
                   {pages.map((link) => (
@@ -263,6 +582,33 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
                       <em>{link.role}</em><ArrowRight size={15} />
                     </Link>
                   ))}
+=======
+                <header>
+                  <h3>{module}</h3>
+                  <span>
+                    {pages.length} page{pages.length === 1 ? "" : "s"}
+                  </span>
+                </header>
+                <div>
+                  {pages.map((link) => {
+                    const implemented = isWorkspaceRouteImplemented(link.href);
+                    return (
+                      <Link
+                        href={implemented ? link.href : `/coming-soon?title=${encodeURIComponent(link.label)}&href=${encodeURIComponent(link.href)}`}
+                        key={`${module}-${link.label}`}
+                        data-coming-soon={!implemented}
+                      >
+                        <i>{link.role === "primary" ? <CircleDot size={16} /> : <Monitor size={16} />}</i>
+                        <span>
+                          <b>{link.label}</b>
+                          <small>{link.purpose}</small>
+                        </span>
+                        <em>{implemented ? link.role : "coming soon"}</em>
+                        <ArrowRight size={15} />
+                      </Link>
+                    );
+                  })}
+>>>>>>> Stashed changes
                 </div>
               </section>
             ))}
@@ -273,6 +619,7 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
           <section className={styles.checklist}>
             <h2>Stage completion standard</h2>
             <p>Advance only when the required outcome is complete and supporting evidence is recorded.</p>
+<<<<<<< Updated upstream
             {CHECKLIST.map((item, index) => (
               <label key={item}><input type="checkbox" checked={checks[index]} onChange={() => setChecks((current) => current.map((value, i) => i === index ? !value : value))} /><span>{item}</span></label>
             ))}
@@ -280,24 +627,90 @@ export function ProductionLifecycleWorkspace({ stage, initialStatus }: Props) {
             <button type="button" onClick={() => void markStageReady()} disabled={markReadyState === "loading"}>
               <CheckCircle2 size={15} />{markReadyState === "done" ? "Stage marked ready" : markReadyState === "loading" ? "Validating…" : "Mark stage ready"}
             </button>
+=======
+            {(Object.keys(checklistLabels) as LifecycleChecklistItem[]).map((item) => (
+              <label key={item}>
+                <input
+                  type="checkbox"
+                  checked={checklist[item]}
+                  onChange={(event) => updateChecklistItem(item, event.target.checked)}
+                />
+                <span>{checklistLabels[item]}</span>
+              </label>
+            ))}
+            <button type="button" disabled={saving} onClick={markStageReady}>
+              <CheckCircle2 size={15} />
+              Mark stage ready
+            </button>
+            {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}
+>>>>>>> Stashed changes
           </section>
           <section className={styles.governance}>
             <h2>Lifecycle governance</h2>
             <dl>
+<<<<<<< Updated upstream
               <div><dt>Stage owner</dt><dd>{stage.pages[0]?.module}</dd></div>
               <div><dt>Canonical route</dt><dd>/production-workflow/{stage.id}</dd></div>
               <div><dt>Auto-advance</dt><dd>{autoAdvance ? "Enabled" : "Disabled"}</dd></div>
               <div><dt>Page ownership</dt><dd>Capability modules</dd></div>
+=======
+              <div>
+                <dt>Stage owner</dt>
+                <dd>{stage.pages[0]?.module}</dd>
+              </div>
+              <div>
+                <dt>Canonical route</dt>
+                <dd>/production-workflow/{stage.id}</dd>
+              </div>
+              <div>
+                <dt>Auto-advance</dt>
+                <dd>{autoAdvance ? "Enabled" : "Disabled"}</dd>
+              </div>
+              <div>
+                <dt>Data source</dt>
+                <dd>{snapshot?.source === "live" ? "Live API counts" : "Fallback configuration"}</dd>
+              </div>
+>>>>>>> Stashed changes
             </dl>
           </section>
         </aside>
       </div>
 
       <footer className={styles.stageNavigation}>
+<<<<<<< Updated upstream
         {previous ? <Link href={`/production-workflow/${previous.id}`}><ArrowLeft size={16} /><span><small>Previous stage</small><b>{previous.label}</b></span></Link> : <span />}
         <Link href="/production-workflow/discover" className={styles.allStages}>View complete lifecycle</Link>
         {next ? <Link href={`/production-workflow/${next.id}`}><span><small>Next stage</small><b>{next.label}</b></span><ArrowRight size={16} /></Link> : <span />}
       </footer>
   </section>
+=======
+        {previous ? (
+          <Link href={`/production-workflow/${previous.id}`}>
+            <ArrowLeft size={16} />
+            <span>
+              <small>Previous stage</small>
+              <b>{previous.label}</b>
+            </span>
+          </Link>
+        ) : (
+          <span />
+        )}
+        <Link href="/production-workflow/discover" className={styles.allStages}>
+          View complete lifecycle
+        </Link>
+        {next ? (
+          <Link href={`/production-workflow/${next.id}`}>
+            <span>
+              <small>Next stage</small>
+              <b>{next.label}</b>
+            </span>
+            <ArrowRight size={16} />
+          </Link>
+        ) : (
+          <span />
+        )}
+      </footer>
+    </section>
+>>>>>>> Stashed changes
   );
 }

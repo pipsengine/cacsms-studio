@@ -45,6 +45,9 @@ import { MyWorkspaceDashboard } from "@/features/my-workspace/MyWorkspaceDashboa
 import { getMyWorkspaceData } from "@/lib/my-workspace-data";
 import { ActiveProductionsPage } from "@/features/active-productions/ActiveProductionsPage";
 import { RecentProductionsPage } from "@/features/recent-productions/RecentProductionsPage";
+import { ComingSoonPage } from "@/features/coming-soon/ComingSoonPage";
+import { isWorkspaceRouteImplemented } from "@/lib/workspace-routes";
+import { ProductionDefaultsPage } from "@/features/settings/ProductionDefaultsPage";
 import { KnowledgeUniversePage } from "@/features/knowledge-universe/KnowledgeUniversePage";
 import { PredictionEnginePage } from "@/features/knowledge-universe/PredictionEnginePage";
 import { KnowledgeQualityPage } from "@/features/knowledge-universe/KnowledgeQualityPage";
@@ -122,6 +125,10 @@ export async function ModuleWorkspace({
     return <RecentProductionsPage />;
   }
 
+  if (module.slug === "settings" && workspace?.slug === "production-defaults") {
+    return <ProductionDefaultsPage />;
+  }
+
   if (module.slug === "opportunity-intelligence") {
     return <OpportunityIntelligenceWorkspace title={title} workspaceLabel={workspace?.label} />;
   }
@@ -154,6 +161,7 @@ export async function ModuleWorkspace({
     }
   }
 
+<<<<<<< Updated upstream
   if (module.slug === "story-learning" && workspace?.slug === "structure-dashboard") {
     return <StructureDashboard />;
   }
@@ -340,6 +348,11 @@ export async function ModuleWorkspace({
         />
       );
     }
+=======
+  const href = workspace ? `/${moduleSlug}/${workspaceSlug}` : `/${moduleSlug}`;
+  if (!isWorkspaceRouteImplemented(href)) {
+    return <ComingSoonPage title={title} href={href} />;
+>>>>>>> Stashed changes
   }
 
   return (

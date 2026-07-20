@@ -11,6 +11,8 @@ local-models/image-renderer/prompt-test.txt
 infrastructure/deployment/iis/.tools/
 migration.env.local
 .turbo/
+.data/
+apps/web/.data/
 .env
 .env.*
 !.env.example

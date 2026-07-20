@@ -50,6 +50,36 @@ textarea {
   min-height: 100vh;
 }
 
+.shell.sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.shell.sidebar-collapsed .brand-copy,
+.shell.sidebar-collapsed .nav-label,
+.shell.sidebar-collapsed .nav-item a,
+.shell.sidebar-collapsed .nav-badge,
+.shell.sidebar-collapsed .nav-chevron,
+.shell.sidebar-collapsed .pipeline-subnav,
+.shell.sidebar-collapsed .profile-copy,
+.shell.sidebar-collapsed .sidebar-footer svg {
+  display: none;
+}
+
+.shell.sidebar-collapsed .brand-row,
+.shell.sidebar-collapsed .nav-item,
+.shell.sidebar-collapsed .sidebar-footer {
+  justify-content: center;
+}
+
+.shell.sidebar-collapsed .nav-item {
+  grid-template-columns: 18px;
+  padding: 10px;
+}
+
+.shell.sidebar-collapsed .sidebar {
+  width: 76px;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
