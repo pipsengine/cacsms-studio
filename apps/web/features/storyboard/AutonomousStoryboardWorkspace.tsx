@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -243,6 +243,7 @@ export function AutonomousStoryboardWorkspace({
   );
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
+  const streamEstablished = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -289,6 +290,10 @@ export function AutonomousStoryboardWorkspace({
   useEffect(() => {
     const eventSource = new EventSource("/api/storyboard/storyboard-editor/events");
 
+    eventSource.onopen = () => {
+      setAdapterDetail("SSE connection established. Waiting for live storyboard events.");
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as Partial<StoryboardPayload> & { message?: string };
@@ -301,6 +306,7 @@ export function AutonomousStoryboardWorkspace({
         }
 
         if (typeof data.generatedAt === "string") {
+          streamEstablished.current = true;
           const nextPayload = data as StoryboardPayload;
           setPayload(nextPayload);
           setLastSync(nextPayload.generatedAt);
@@ -319,7 +325,11 @@ export function AutonomousStoryboardWorkspace({
     eventSource.onerror = () => {
       setStreamLive(false);
       setStreamMode("polling");
-      setAdapterDetail("SSE connection is unavailable. Polling fallback remains active.");
+      setAdapterDetail(
+        streamEstablished.current
+          ? "SSE connection is reconnecting. Polling fallback remains active."
+          : "SSE connection is unavailable. Polling fallback remains active."
+      );
     };
 
     return () => {

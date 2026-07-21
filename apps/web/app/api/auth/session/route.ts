@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import {
   createSession,
   getRequestSession,
+  getOrCreateBootstrapUserId,
   readSessionToken,
   sessionCookieName
 } from "@/lib/auth/session";
-import { getMssqlPool } from "@/lib/database/mssql";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +15,7 @@ async function bootstrapSession(request: Request): Promise<{ token: string; sess
     return null;
   }
 
-  const pool = await getMssqlPool();
-  const result = await pool.request().query<{ UserId: string }>(
-    `SELECT TOP(1) CONVERT(nvarchar(36), UserId) UserId FROM cacsms.Users WHERE IsActive=1 ORDER BY CASE Role WHEN N'administrator' THEN 0 WHEN N'manager' THEN 1 ELSE 2 END, CreatedAt`
-  );
-  const userId = result.recordset[0]?.UserId;
+  const userId = await getOrCreateBootstrapUserId();
   if (!userId) return null;
 
   const { token, session } = await createSession(userId);

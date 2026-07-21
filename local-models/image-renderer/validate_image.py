@@ -34,6 +34,15 @@ LABELS = {
 }
 
 
+def load_cascade(path: Path):
+    if not hasattr(cv2, "CascadeClassifier"):
+        return None
+    classifier = cv2.CascadeClassifier(str(path))
+    if hasattr(classifier, "empty") and classifier.empty():
+        return None
+    return classifier
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", required=True)
@@ -52,17 +61,22 @@ def main() -> None:
         gray = cv2.resize(gray, (max_width, int(gray.shape[0] * scale)), interpolation=cv2.INTER_AREA)
         bgr = cv2.resize(bgr, (max_width, int(bgr.shape[0] * scale)), interpolation=cv2.INTER_AREA)
 
-    cascade_dir = Path(cv2.data.haarcascades)
-    cascades = {
-        "face": cv2.CascadeClassifier(str(cascade_dir / "haarcascade_frontalface_default.xml")),
-        "profile": cv2.CascadeClassifier(str(cascade_dir / "haarcascade_profileface.xml")),
-        "upper_body": cv2.CascadeClassifier(str(cascade_dir / "haarcascade_upperbody.xml")),
-        "full_body": cv2.CascadeClassifier(str(cascade_dir / "haarcascade_fullbody.xml")),
-    }
-    raw_faces = list(cascades["face"].detectMultiScale(gray, scaleFactor=1.08, minNeighbors=3, minSize=(28, 28)))
-    raw_profiles = list(cascades["profile"].detectMultiScale(gray, scaleFactor=1.08, minNeighbors=3, minSize=(28, 28)))
-    upper = list(cascades["upper_body"].detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(48, 64)))
-    full = list(cascades["full_body"].detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(48, 96)))
+    cascade_dir = Path(cv2.data.haarcascades) if hasattr(cv2, "data") else None
+    cascades = (
+        {
+            "face": load_cascade(cascade_dir / "haarcascade_frontalface_default.xml"),
+            "profile": load_cascade(cascade_dir / "haarcascade_profileface.xml"),
+            "upper_body": load_cascade(cascade_dir / "haarcascade_upperbody.xml"),
+            "full_body": load_cascade(cascade_dir / "haarcascade_fullbody.xml"),
+        }
+        if cascade_dir and cascade_dir.exists()
+        else {"face": None, "profile": None, "upper_body": None, "full_body": None}
+    )
+    raw_faces = list(cascades["face"].detectMultiScale(gray, scaleFactor=1.08, minNeighbors=3, minSize=(28, 28))) if cascades["face"] else []
+    raw_profiles = list(cascades["profile"].detectMultiScale(gray, scaleFactor=1.08, minNeighbors=3, minSize=(28, 28))) if cascades["profile"] else []
+    upper = list(cascades["upper_body"].detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(48, 64))) if cascades["upper_body"] else []
+    full = list(cascades["full_body"].detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(48, 96))) if cascades["full_body"] else []
+    cascade_face_support = cascades["face"] is not None or cascades["profile"] is not None
 
     ycrcb = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)
     skin_mask = cv2.inRange(ycrcb, np.array((35, 135, 70), dtype=np.uint8), np.array((235, 185, 135), dtype=np.uint8))
@@ -252,6 +266,16 @@ def main() -> None:
         scores = {key: max(scores.get(key, 0.0), clip_scores.get(key, 0.0)) for key in LABELS.keys()}
         model_id = str(clip_model_id)
 
+    anatomy_pass = (
+        (face_count >= 1 and scores["low_quality_humans"] < 0.26 and hand_blur_pass and facial_quality_pass)
+        or (
+            strong_skin_human_signal
+            and scores["low_quality_humans"] < 0.22
+            and hand_blur_pass
+            and (facial_quality_pass or not cascade_face_support)
+        )
+    )
+
     result = {
         "model": str(model_id),
         "detectors": {
@@ -261,6 +285,7 @@ def main() -> None:
             "skinRegions": len(skin_regions),
             "skinRatio": skin_ratio,
             "strongSkinHumanSignal": strong_skin_human_signal,
+            "cascadeFaceSupport": cascade_face_support,
             "requiresBlackWestAfrican": requires_black_west_african,
             "averageSkinLuma": average_skin_luma,
         },
@@ -287,10 +312,7 @@ def main() -> None:
         "scores": scores,
         "passedHumanPresence": face_count >= 1 or (strong_skin_human_signal and scores["photoreal_humans"] >= 0.4),
         "passedPhotographicStyle": scores["cartoon_illustration"] < 0.24 and scores["three_d_avatar"] < 0.24,
-        "passedAnatomyRisk": (
-            (face_count >= 1 and scores["low_quality_humans"] < 0.26 and hand_blur_pass and facial_quality_pass)
-            or (strong_skin_human_signal and scores["low_quality_humans"] < 0.22 and hand_blur_pass and facial_quality_pass)
-        ),
+        "passedAnatomyRisk": anatomy_pass,
         "passedComposition": composition_pass,
         "passedNaturalHuman": not robotic_feature_risk,
         "passedRegionalAppearance": regional_appearance_pass,

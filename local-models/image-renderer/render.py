@@ -388,12 +388,18 @@ def enhance_face_regions(image: Image.Image) -> Image.Image:
         import numpy as np
     except ImportError:
         return image
+    if not hasattr(cv2, "CascadeClassifier") or not hasattr(cv2, "data"):
+        return image
 
     rgb = np.array(image.convert("RGB"))
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+    if not cascade_path.exists():
+        return image
     cascade = cv2.CascadeClassifier(str(cascade_path))
+    if hasattr(cascade, "empty") and cascade.empty():
+        return image
     faces = cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(48, 48))
     if len(faces) == 0:
         return image

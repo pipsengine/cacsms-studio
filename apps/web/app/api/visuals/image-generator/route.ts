@@ -76,7 +76,21 @@ export async function POST(request: Request) {
     // #endregion
 
     if (body.action === "scheduler") {
-      return NextResponse.json(await runImageGenerationScheduler(), {
+      const isInternalScheduler = Boolean(request.headers.get("x-cacsms-internal"));
+      if (isInternalScheduler) {
+        await runImageGenerationScheduler();
+        return NextResponse.json(await getImageGeneratorData(), {
+          headers: { "Cache-Control": "no-store" }
+        });
+      }
+      void runImageGenerationScheduler().catch((error) => {
+        // #region debug-point A:scheduler-dispatch-error
+        reportImageRouteDebug("A", "api/visuals/image-generator/route.ts:POST", "background scheduler execution failed", {
+          error: error instanceof Error ? error.message : "unknown-error"
+        });
+        // #endregion
+      });
+      return NextResponse.json(await getImageGeneratorData(), {
         headers: { "Cache-Control": "no-store" }
       });
     }

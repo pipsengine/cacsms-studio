@@ -4,100 +4,15 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type React from "react";
 import { usePathname } from "next/navigation";
-<<<<<<< Updated upstream
 import {
-  Activity,
-  Bot,
-  Boxes,
   CalendarClock,
-  Clapperboard,
   ChevronDown,
   ChevronRight,
-  DatabaseZap,
-  FileText,
-  FolderOpen,
-  Gauge,
-  LayoutDashboard,
-  Library,
-  Megaphone,
-  Mic2,
-  Network,
-  PenLine,
   Power,
-  PlaySquare,
-  Radio,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  Telescope,
-  Users,
-  Wand2
-} from "lucide-react";
-import { navigationModules } from "@cacsms/contracts";
-
-const icons = [
-  LayoutDashboard,
-  Clapperboard,
-  Sparkles,
-  Telescope,
-  DatabaseZap,
-  PenLine,
-  Network,
-  FileText,
-  Wand2,
-  PlaySquare,
-  Mic2,
-  CalendarClock,
-  ShieldCheck,
-  FolderOpen,
-  Radio,
-  Library,
-  Boxes,
-  Bot,
-  Activity,
-  Gauge,
-  Users,
-  Network,
-  Settings,
   Settings
-];
-
-const moduleGroups = [
-  {
-    label: "Studio",
-    slugs: [
-      "dashboard",
-      "productions",
-      "intelligence",
-      "opportunity-intelligence",
-      "knowledge-universe",
-      "writing",
-      "story-learning",
-      "storyboard",
-      "visuals",
-      "video",
-      "audio",
-      "timeline"
-    ]
-  },
-  {
-    label: "AI & Automation",
-    slugs: ["agents", "automation"]
-  },
-  {
-    label: "Analytics & Management",
-    slugs: ["quality", "exports", "publishing", "assets", "templates", "analytics", "collaboration", "integrations"]
-  },
-  {
-    label: "Administration",
-    slugs: ["administration", "settings"]
-  }
-];
-=======
-import { ChevronDown, ChevronRight, Settings } from "lucide-react";
+} from "lucide-react";
 import { navigationModuleGroups, navigationModules } from "@cacsms/contracts";
 import { getNavigationIcon } from "@/lib/navigation-icons";
->>>>>>> Stashed changes
 
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -113,8 +28,6 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     navigationModules.find((module) => pathname === `/${module.slug}` || pathname.startsWith(`/${module.slug}/`)) ??
     navigationModules.find((module) => module.slug === "dashboard");
   const [openModule, setOpenModule] = useState<string | null>(activeModule?.slug ?? "dashboard");
-<<<<<<< Updated upstream
-  const dashboardRoute = pathname === "/" || pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname.startsWith("/home/") || pathname.startsWith("/production-studio") || pathname.startsWith("/content-intelligence") || pathname.startsWith("/opportunity-intelligence");
   const hideWorkspaceHeader =
     pathname.startsWith("/writing/script-editor") ||
     pathname.startsWith("/visuals/image-generator") ||
@@ -122,7 +35,6 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/video/scene-video-generator") ||
     pathname.startsWith("/audio/narration-generator") ||
     pathname.startsWith("/audio/music-generator");
-=======
   const [collapsed, setCollapsed] = useState(false);
   const dashboardRoute =
     pathname === "/" ||
@@ -135,8 +47,6 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/knowledge-universe") ||
     pathname.startsWith("/production-workflow") ||
     pathname.startsWith("/coming-soon");
-
->>>>>>> Stashed changes
   const groupedModules = useMemo(
     () =>
       navigationModuleGroups.map((group) => ({
@@ -316,11 +226,7 @@ function hrefForChild(moduleSlug: string, childSlug: string) {
     return "/production-workflow/discover";
   }
   if (moduleSlug === "dashboard" && childSlug === "production-pipeline") {
-<<<<<<< Updated upstream
-    return "/home/production-pipeline";
-=======
     return "/production-workflow/discover";
->>>>>>> Stashed changes
   }
   if (
     moduleSlug === "dashboard" &&
@@ -329,9 +235,6 @@ function hrefForChild(moduleSlug: string, childSlug: string) {
     return `/home/${childSlug}`;
   }
   if (moduleSlug === "productions" && childSlug === "production-pipeline") {
-<<<<<<< Updated upstream
-    return "/home/production-pipeline";
-=======
     return "/production-workflow/discover";
   }
   if (moduleSlug === "productions" && childSlug === "create-production") {
@@ -351,7 +254,6 @@ function hrefForChild(moduleSlug: string, childSlug: string) {
   }
   if (moduleSlug === "settings" && childSlug === "production-defaults") {
     return "/settings/production-defaults";
->>>>>>> Stashed changes
   }
   return `/${moduleSlug}/${childSlug}`;
 }

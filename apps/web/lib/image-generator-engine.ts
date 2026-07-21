@@ -16,7 +16,11 @@ import {
   type TechnicalImageValidation
 } from "@/lib/image-generator-integrity";
 import { readPngDimensions } from "@/lib/image-generator-png";
-import { localImageRenderTimeoutMs, terminateOrphanedLocalImageRenders } from "@/lib/local-image-model-runtime";
+import {
+  getLocalImageDaemonHealth,
+  localImageRenderTimeoutMs,
+  terminateOrphanedLocalImageRenders
+} from "@/lib/local-image-model-runtime";
 import { buildPhotorealStoryboardPrompt } from "@/lib/local-storyboard-frame-renderer";
 import {
   getVisualGenerationProvider,
@@ -305,7 +309,49 @@ function sceneSubject(row: ProductionRow) {
   if (title.includes("market")) return "Enterprise AI operations command center";
   if (title.includes("education") || title.includes("training")) return "Collaborative smart learning environment";
   if (title.includes("energy")) return "Industrial control room with predictive dashboards";
+  if (title.includes("factory") || title.includes("maintenance") || title.includes("industrial")) {
+    return "Nigerian factory maintenance operations workspace with predictive maintenance dashboards";
+  }
   return "AI-enabled operations environment";
+}
+
+function resolvedHumanSubject(brief: VisualBrief, row: ProductionRow) {
+  const subject = brief.subject.replace(/\s+/g, " ").trim();
+  const lower = subject.toLowerCase();
+  if (
+    !subject ||
+    lower.includes("narrative connects the brief") ||
+    lower.includes("strongest research findings") ||
+    lower.includes("actionable story arc")
+  ) {
+    return sceneSubject(row);
+  }
+  return subject;
+}
+
+function framingInstructions(composition: string, row: ProductionRow) {
+  const lower = composition.toLowerCase();
+  const factoryContext =
+    row.Title.toLowerCase().includes("factory") || row.Title.toLowerCase().includes("maintenance");
+  if (lower.includes("close-up") || lower.includes("insert")) {
+    return {
+      lead:
+        factoryContext
+          ? "Photorealistic documentary close-up of a Nigerian factory maintenance professional actively reviewing a predictive maintenance dashboard, not a wide office scene."
+          : "Photorealistic documentary close-up of one Nigerian business professional actively using an enterprise AI workflow tool, not a wide office scene.",
+      camera:
+        "Camera: 50mm lens, eye-level close-up from 3 to 5 feet away, one dominant foreground subject, readable background context only.",
+      composition:
+        "Keep one primary subject dominant in frame with full face, head, shoulders, hands and working tool visible; background monitors and room context must stay secondary."
+    };
+  }
+  return {
+    lead: "Photorealistic documentary photograph of a Lagos Nigeria corporate AI operations room, medium shot, not a beauty shot.",
+    camera:
+      "Camera: 35mm to 50mm lens, eye-level three-quarter perspective from 5 to 8 feet away, medium composition, layered depth, moderate depth of field with readable background.",
+    composition:
+      "Keep one or two primary subjects dominant in frame with full faces, hands and upper bodies visible; the environment supports the action but does not overpower the people."
+  };
 }
 
 function seedPrompt(row: ProductionRow, metadata: Record<string, unknown>, asset: string, subject: string) {
@@ -359,6 +405,14 @@ function generationStaleMs(updatedAt: Date | string) {
 
 function generationStillRunning(updatedAt: Date | string) {
   return generationStaleMs(updatedAt) < localImageRenderTimeoutMs() + 120_000;
+}
+
+async function localGenerationStillRunning(updatedAt: Date | string) {
+  const staleMs = generationStaleMs(updatedAt);
+  if (staleMs < 180_000) return true;
+  const health = await getLocalImageDaemonHealth();
+  if (!health.reachable) return generationStillRunning(updatedAt);
+  return health.activeRender;
 }
 const PHOTOREAL_HUMAN_NEGATIVE_PROMPT = [
   "cartoon",
@@ -417,13 +471,32 @@ const PHOTOREAL_HUMAN_NEGATIVE_PROMPT = [
   "blur"
 ].join(", ");
 
-async function renderIndependentVisual(prompt: string, width: number, height: number, seed: string, allowFallback: boolean) {
+type IndependentRenderResult =
+  | { status: "rendered"; render: Awaited<ReturnType<ReturnType<typeof getVisualGenerationProvider>["generate"]>> }
+  | { status: "pending"; reason: string }
+  | { status: "failed"; reason: string };
+
+async function renderIndependentVisual(prompt: string, width: number, height: number, seed: string, allowFallback: boolean): Promise<IndependentRenderResult> {
   const provider = getVisualGenerationProvider();
   try {
-    return await provider.generate({ prompt, width, height, seed });
+    return {
+      status: "rendered",
+      render: await provider.generate({ prompt, width, height, seed })
+    };
   } catch (error) {
     console.warn("cacsms.visualGenerationProvider.failed", error);
-    return null;
+    const reason = error instanceof Error ? error.message : "The local image provider failed before returning image bytes.";
+    const health = await getLocalImageDaemonHealth().catch(() => null);
+    if (
+      reason.includes("busy with another diffusion job") ||
+      (health?.activeRender && health.reachable)
+    ) {
+      return {
+        status: "pending",
+        reason: "The local image provider is already rendering a candidate. The scheduler will wait for completion before retrying."
+      };
+    }
+    return { status: "failed", reason };
   }
 }
 const MAX_RETRIES = 5;
@@ -1366,25 +1439,28 @@ function resolveLocaleProfile(row: ProductionRow, metadata: Record<string, unkno
 function buildPhotorealPrompt(brief: VisualBrief, row: ProductionRow, variantNumber: number, retryCount: number) {
   const topic = row.Title.replace(/\s+/g, " ").trim();
   const locale = brief.localeProfile;
+  const subject = resolvedHumanSubject(brief, row);
+  const framing = framingInstructions(brief.composition, row);
   const corporateLocaleInstruction = locale.country.toLowerCase() === "nigeria"
     ? "For Lagos corporate scenes, show Black Nigerian and West African business professionals in contemporary office/workwear; do not default to traditional, ceremonial, religious or festival clothing unless the persisted scene brief explicitly requires it."
     : "Use contemporary professional clothing appropriate to the resolved locale unless the persisted scene brief explicitly requires traditional or ceremonial attire.";
   return [
-    "Photorealistic documentary photograph of a Lagos Nigeria corporate AI operations room, medium-wide scene, not a beauty shot.",
+    framing.lead,
     "Prioritize large, sharp, symmetrical natural human faces with detailed eyes, visible pupils, natural skin texture, and original synthetic identity.",
-    "Show one or two primary Black Nigerian or West African adult business professionals in the foreground; add a third person only if the scene requires a group scale.",
-    "One clear foreground professional is fully inside the 10 percent safe area, with complete head and upper body visible, visible hands using a laptop, tablet, control console or workstation.",
-    "The surrounding AI operations room must remain readable: analytics screens, maintenance workflow dashboard, desks, glass partitions, and modern enterprise equipment.",
+    "Show one or two primary Black Nigerian or West African adult business professionals in the foreground; do not render an empty room, monitor wall, or environment-only scene.",
+    "One clear foreground professional is fully inside the 10 percent safe area, with complete head and upper body visible, visible hands using a laptop, tablet, maintenance console, handheld diagnostic tool, or workstation.",
+    "The surrounding environment must support the action: analytics screens, maintenance workflow dashboard, desks, glass partitions, industrial monitoring tools, and modern enterprise equipment remain readable but secondary to the humans.",
     "Use natural expression, original synthetic identity, no celebrity likeness, no known-person imitation, believable eye detail, skin texture, hair, clothing folds, and accurate body proportions.",
     "If the production mentions AI agents, render natural human operators using AI software dashboards; the AI must appear only as screen interfaces, analytics panels or workflow tools, never as robotic/cybernetic facial or body features.",
-    "Composition must not crop the face, head, hands or upper body; keep every face away from extreme frame edges, leave breathing room above the head, reduce background blur, show a clear environment and action.",
+    "Composition must not crop the face, head, hands or upper body; keep every face away from extreme frame edges, leave breathing room above the head, reduce background blur, and never let monitors or furniture dominate the frame.",
+    framing.composition,
     `Locale: ${locale.hierarchy.join(" > ")}.`,
     `Regional realism: ${locale.demographics}; ${locale.clothing}; ${locale.architecture}; ${locale.infrastructure}; ${locale.climate}.`,
     `Language/signage/currency constraints: ${locale.language}; ${locale.signage}; ${locale.currency}; ${locale.dateFormat}.`,
     `Cultural integrity: ${locale.culturalNotes.join(" ")} ${corporateLocaleInstruction}`,
-    `Production context: ${topic}. Scene: ${brief.scene}. Environment: ${brief.subject}.`,
+    `Production context: ${topic}. Scene: ${brief.scene}. Environment and subject: ${subject}.`,
     "Rendering mode: production-grade photorealistic documentary still, real camera capture aesthetic, natural facial features, skin pores and texture, realistic hair, accurate hands, correct body proportions, believable clothing folds.",
-    "Camera: 28mm to 35mm lens, eye-level three-quarter perspective from 8 to 12 feet away, medium-wide composition, layered depth, moderate depth of field with readable background.",
+    framing.camera,
     `Composition: ${brief.composition}; clear primary subject count, environmental interaction, foreground/midground/background separation.`,
     "Lighting: soft directional key light, practical screen glow, natural shadows, consistent perspective and reflections.",
     `Mood and brand: ${brief.brandProfile}, credible enterprise environment, polished but not artificial.`,
@@ -2198,8 +2274,19 @@ async function recoverStuckGenerationJob(
   const generatingVariants = variants.filter((variant) => variant.State === "Generating");
   const jobGenerating = job.State === "Generating";
   if (!jobGenerating && generatingVariants.length === 0) return job;
-  if (jobGenerating && generationStillRunning(job.UpdatedAt)) return job;
-  if (generatingVariants.some((variant) => generationStillRunning(variant.UpdatedAt))) return job;
+  if (jobGenerating && await localGenerationStillRunning(job.UpdatedAt)) return job;
+  if (await Promise.all(generatingVariants.map(async (variant) => localGenerationStillRunning(variant.UpdatedAt))).then((states) => states.some(Boolean))) {
+    return job;
+  }
+
+  // #region debug-point C:stale-generating-recovered
+  reportImageEngineDebug("C", "lib/image-generator-engine.ts:recoverStuckGenerationJob", "recovered stale generating state with idle daemon", {
+    productionId: row.ProductionId,
+    jobId: job.ImageGenerationJobId,
+    jobGenerating,
+    generatingVariants: generatingVariants.length
+  });
+  // #endregion
 
   terminateOrphanedLocalImageRenders();
 
@@ -2380,28 +2467,40 @@ async function patchVariant(
     qualitySummary?: string | null;
   }
 ) {
+  const hasAssetId = Object.prototype.hasOwnProperty.call(patch, "assetId");
+  const hasFailureReason = Object.prototype.hasOwnProperty.call(patch, "failureReason");
+  const hasStorageResult = Object.prototype.hasOwnProperty.call(patch, "storageResult");
+  const hasProviderResponse = Object.prototype.hasOwnProperty.call(patch, "providerResponse");
+  const hasQualityScore = Object.prototype.hasOwnProperty.call(patch, "qualityScore");
+  const hasQualitySummary = Object.prototype.hasOwnProperty.call(patch, "qualitySummary");
   await pool
     .request()
     .input("variantId", sql.NVarChar(36), variantId)
     .input("state", sql.NVarChar(30), patch.state)
     .input("retryCount", sql.Int, patch.retryCount)
-    .input("assetId", sql.NVarChar(36), patch.assetId ?? null)
-    .input("failureReason", sql.NVarChar(2000), patch.failureReason ?? null)
-    .input("storageResult", sql.NVarChar(400), patch.storageResult ?? null)
-    .input("providerResponse", sql.NVarChar(sql.MAX), patch.providerResponse ?? null)
-    .input("qualityScore", sql.Decimal(5, 2), patch.qualityScore ?? null)
-    .input("qualitySummary", sql.NVarChar(sql.MAX), patch.qualitySummary ?? null)
+    .input("setAssetId", sql.Bit, hasAssetId)
+    .input("assetId", sql.NVarChar(36), hasAssetId ? patch.assetId ?? null : null)
+    .input("setFailureReason", sql.Bit, hasFailureReason)
+    .input("failureReason", sql.NVarChar(2000), hasFailureReason ? patch.failureReason ?? null : null)
+    .input("setStorageResult", sql.Bit, hasStorageResult)
+    .input("storageResult", sql.NVarChar(400), hasStorageResult ? patch.storageResult ?? null : null)
+    .input("setProviderResponse", sql.Bit, hasProviderResponse)
+    .input("providerResponse", sql.NVarChar(sql.MAX), hasProviderResponse ? patch.providerResponse ?? null : null)
+    .input("setQualityScore", sql.Bit, hasQualityScore)
+    .input("qualityScore", sql.Decimal(5, 2), hasQualityScore ? patch.qualityScore ?? null : null)
+    .input("setQualitySummary", sql.Bit, hasQualitySummary)
+    .input("qualitySummary", sql.NVarChar(sql.MAX), hasQualitySummary ? patch.qualitySummary ?? null : null)
     .query(`
       UPDATE cacsms.ImageGenerationVariants
       SET
         State=@state,
         RetryCount=@retryCount,
-        ImageGenerationAssetId=COALESCE(CONVERT(uniqueidentifier, @assetId), ImageGenerationAssetId),
-        FailureReason=@failureReason,
-        StorageResult=COALESCE(@storageResult, StorageResult),
-        ProviderResponseJson=COALESCE(@providerResponse, ProviderResponseJson),
-        QualityScore=COALESCE(@qualityScore, QualityScore),
-        QualitySummaryJson=COALESCE(@qualitySummary, QualitySummaryJson),
+        ImageGenerationAssetId=CASE WHEN @setAssetId=1 THEN CONVERT(uniqueidentifier, @assetId) ELSE ImageGenerationAssetId END,
+        FailureReason=CASE WHEN @setFailureReason=1 THEN @failureReason ELSE FailureReason END,
+        StorageResult=CASE WHEN @setStorageResult=1 THEN @storageResult ELSE StorageResult END,
+        ProviderResponseJson=CASE WHEN @setProviderResponse=1 THEN @providerResponse ELSE ProviderResponseJson END,
+        QualityScore=CASE WHEN @setQualityScore=1 THEN @qualityScore ELSE QualityScore END,
+        QualitySummaryJson=CASE WHEN @setQualitySummary=1 THEN @qualitySummary ELSE QualitySummaryJson END,
         UpdatedAt=SYSUTCDATETIME()
       WHERE CONVERT(nvarchar(36), ImageGenerationVariantId)=@variantId;
     `);
@@ -3470,7 +3569,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     return getImageGeneratorData();
   }
 
-  if (job.State === "Generating" && generationStillRunning(job.UpdatedAt)) {
+  if (job.State === "Generating" && await localGenerationStillRunning(job.UpdatedAt)) {
     return getImageGeneratorData();
   }
 
@@ -3557,6 +3656,11 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
     state: "Generating",
     retryCount: job.RetryCount,
+    assetId: null,
+    failureReason: null,
+    storageResult: instructions.mode.mode === "photoreal-human"
+      ? "The local provider is generating image bytes for this variant."
+      : "The local provider is generating a scene candidate for this variant.",
     providerResponse: JSON.stringify({
       provider: generationProvider,
       providerJobId,
@@ -3571,10 +3675,42 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
   });
 
   const rendered = await renderIndependentVisual(renderPrompt, width, height, providerJobId, false);
-  if (!rendered) {
+  if (rendered.status === "pending") {
+    await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
+      state: "Generating",
+      retryCount: job.RetryCount,
+      failureReason: null,
+      storageResult: rendered.reason,
+      providerResponse: JSON.stringify({
+        provider: PHOTO_REAL_PROVIDER,
+        providerJobId,
+        status: "in-progress",
+        workflow: providerDefaults.workflowKey,
+        prompt: instructions.prompt,
+        negativePrompt: instructions.negativePrompt,
+        settings: instructions.settings,
+        note: rendered.reason
+      })
+    });
+    await patchJob(pool, job.ImageGenerationJobId, {
+      state: "Generating",
+      retryCount: job.RetryCount,
+      providerJobId,
+      failureReason: null,
+      nextRecoveryAction: "Wait for the active local render to finish, then persist the asset and continue quality review.",
+      storageResult: rendered.reason,
+      modelResponse: JSON.stringify({
+        provider: PHOTO_REAL_PROVIDER,
+        providerJobId,
+        workflow: providerDefaults.workflowKey,
+        note: rendered.reason
+      })
+    });
+    return getImageGeneratorData();
+  }
+  if (rendered.status === "failed") {
     const nextRetry = job.RetryCount + 1;
-    const defectSummary =
-      "The configured real image provider timed out or failed before returning image bytes.";
+    const defectSummary = rendered.reason;
     await patchVariant(pool, activeVariant.ImageGenerationVariantId, {
       state: "Rejected",
       retryCount: nextRetry,
@@ -3618,8 +3754,8 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     return getImageGeneratorData();
   }
   const providerAudit = {
-    provider: rendered.provider,
-    model: rendered.model,
+    provider: rendered.render.provider,
+    model: rendered.render.model,
     providerJobId,
     prompt: instructions.prompt,
     negativePrompt: instructions.negativePrompt,
@@ -3628,14 +3764,14 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     modeReason: instructions.mode.reason,
     promptVersionNumber: persistedPrompt.versionNumber,
     briefVersionNumber: persistedBrief.versionNumber,
-    byteLength: rendered.bytes.length,
-    width: rendered.width,
-    height: rendered.height,
-    averageLuma: rendered.averageLuma,
-    method: rendered.method
+    byteLength: rendered.render.bytes.length,
+    width: rendered.render.width,
+    height: rendered.render.height,
+    averageLuma: rendered.render.averageLuma,
+    method: rendered.render.method
   };
   const technicalValidation = validateTechnicalImageBytes({
-    bytes: rendered.bytes,
+    bytes: rendered.render.bytes,
     mimeType: "image/png",
     expectedMimeType: "image/png",
     expectedWidth: width,
@@ -3676,17 +3812,17 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     retryCount: job.RetryCount,
     providerJobId,
     nextRecoveryAction: "Persist the generated bytes to storage.",
-    storageResult: `Generated ${rendered.bytes.length} candidate image bytes and preparing the filesystem write.`,
+    storageResult: `Generated ${rendered.render.bytes.length} candidate image bytes and preparing the filesystem write.`,
     modelResponse: JSON.stringify(providerAudit)
   });
 
   const assetDirectory = path.join(STORAGE_DIR, row.ProductionId);
   fs.mkdirSync(assetDirectory, { recursive: true });
-  const fileName = `variant-${activeVariant.VariantNumber}-${rendered.checksum.slice(0, 12)}.png`;
+  const fileName = `variant-${activeVariant.VariantNumber}-${rendered.render.checksum.slice(0, 12)}.png`;
   const absolutePath = path.join(assetDirectory, fileName);
-  fs.writeFileSync(absolutePath, rendered.bytes);
+  fs.writeFileSync(absolutePath, rendered.render.bytes);
   const size = fs.statSync(absolutePath).size;
-  const dimensions = readPngDimensions(rendered.bytes);
+  const dimensions = readPngDimensions(rendered.render.bytes);
 
   await patchJob(pool, job.ImageGenerationJobId, {
     state: "Persisting",
@@ -3712,7 +3848,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     size,
     dimensions.width,
     dimensions.height,
-    rendered.checksum,
+    rendered.render.checksum,
     technicalValidation
   );
   await pool.request().input("assetId", sql.NVarChar(36), assetId).input("publicUrl", sql.NVarChar(1000), createVisualAssetUrl(assetId)).query(`
@@ -3759,7 +3895,7 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     retryCount: job.RetryCount,
     nextRecoveryAction: "Run server-side asset verification and quality review.",
     storageResult: `Verified image bytes at ${createVisualAssetUrl(assetId)}.`,
-    modelResponse: JSON.stringify({ ...providerAudit, assetId, checksum: rendered.checksum, width: dimensions.width, height: dimensions.height })
+    modelResponse: JSON.stringify({ ...providerAudit, assetId, checksum: rendered.render.checksum, width: dimensions.width, height: dimensions.height })
   });
   await advanceAssetToReviewing(pool, row, job, activeVariant, assetId, metadata);
   return getImageGeneratorData();

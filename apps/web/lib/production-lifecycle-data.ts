@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 import sql from "mssql";
 import {
   lifecycleStageValidationRules,
@@ -7,6 +6,11 @@ import {
   type WorkflowStage
 } from "@cacsms/contracts";
 import { getMssqlPool } from "@/lib/database/mssql";
+import type {
+  LifecycleChecklistItem,
+  ProductionLifecycleSnapshot,
+  ProductionLifecycleSettings as SnapshotSettings
+} from "@/types/production-lifecycle";
 
 export type LifecycleStageStatus = {
   id: WorkflowStage;
@@ -366,23 +370,6 @@ export async function isAutoAdvanceEnabled(): Promise<boolean> {
   const settings = await getLifecycleSettings();
   return settings.autoAdvanceEnabled;
 }
-=======
-import fs from "node:fs/promises";
-import path from "node:path";
-import sql from "mssql";
-import {
-  productionLifecycleStages,
-  type WorkflowStage
-} from "@cacsms/contracts";
-import { getMssqlPool } from "@/lib/database/mssql";
-import { getActiveProductionsData } from "@/lib/active-productions-data";
-import { getDiscoveryData, getOpportunityDashboard } from "@/lib/opportunity-intelligence-data";
-import type {
-  LifecycleChecklistItem,
-  LifecycleStageStatus,
-  ProductionLifecycleSettings,
-  ProductionLifecycleSnapshot
-} from "@/types/production-lifecycle";
 
 const checklistItems: LifecycleChecklistItem[] = [
   "required-work-completed",
@@ -392,231 +379,130 @@ const checklistItems: LifecycleChecklistItem[] = [
   "next-stage-ready"
 ];
 
-const dataDirectory = path.join(process.cwd(), ".data");
-const settingsPath = path.join(dataDirectory, "production-lifecycle.json");
-
-function defaultStageState() {
+function defaultChecklistState() {
   return {
-    checklist: {
-      "required-work-completed": false,
-      "validation-checks-passed": false,
-      "exceptions-resolved": false,
-      "stage-output-recorded": false,
-      "next-stage-ready": false
-    },
+    checklist: checklistItems.reduce(
+      (acc, item) => {
+        acc[item] = false;
+        return acc;
+      },
+      {} as Record<LifecycleChecklistItem, boolean>
+    ),
     ready: false,
     completedAt: null as string | null
   };
 }
 
-function defaultSettings(): ProductionLifecycleSettings {
-  return {
-    autoAdvance: true,
-    currentStageId: "discover",
-    stages: {},
-    updatedAt: new Date().toISOString()
-  };
-}
-
-async function readSettings(): Promise<ProductionLifecycleSettings> {
-  try {
-    const raw = await fs.readFile(settingsPath, "utf8");
-    const parsed = JSON.parse(raw) as ProductionLifecycleSettings;
-    return {
-      ...defaultSettings(),
-      ...parsed,
-      stages: parsed.stages ?? {}
-    };
-  } catch {
-    return defaultSettings();
-  }
-}
-
-async function writeSettings(settings: ProductionLifecycleSettings) {
-  await fs.mkdir(dataDirectory, { recursive: true });
-  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf8");
-}
-
-function stageState(settings: ProductionLifecycleSettings, stageId: WorkflowStage) {
-  return settings.stages[stageId] ?? defaultStageState();
-}
-
-function fallbackCounts(): Record<WorkflowStage, { count: number | null; label: string }> {
-  return productionLifecycleStages.reduce(
-    (acc, stage) => {
-      acc[stage.id] = { count: null, label: stage.statusLabel };
-      return acc;
-    },
-    {} as Record<WorkflowStage, { count: number | null; label: string }>
-  );
-}
-
-async function liveStageCounts(): Promise<Record<WorkflowStage, { count: number | null; label: string }>> {
-  const counts = fallbackCounts();
-
-  try {
-    const [dashboard, discovery, activeProductions] = await Promise.all([
-      getOpportunityDashboard(),
-      getDiscoveryData(),
-      getActiveProductionsData({ pageSize: 100 })
-    ]);
-
-    counts.discover = {
-      count: discovery.signals.length,
-      label: `${discovery.signals.length} New`
-    };
-    counts.research = {
-      count: dashboard.opportunities.filter((item) => /research|progress|validate/i.test(item.status)).length,
-      label: `${dashboard.opportunities.filter((item) => /research|progress|validate/i.test(item.status)).length} In Progress`
-    };
-    counts.evaluate = {
-      count: dashboard.metrics.highPriority,
-      label: `${dashboard.metrics.highPriority} High Priority`
-    };
-    counts["pre-plan"] = {
-      count: dashboard.opportunities.filter((item) => /ready|pre-plan|initiative/i.test(item.status)).length,
-      label: `${dashboard.opportunities.filter((item) => /ready|pre-plan|initiative/i.test(item.status)).length} Ready`
-    };
-    counts.schedule = {
-      count: dashboard.opportunities.filter((item) => /schedul/i.test(item.status)).length || activeProductions.deadlines.length,
-      label: `${dashboard.opportunities.filter((item) => /schedul/i.test(item.status)).length || activeProductions.deadlines.length} Scheduled`
-    };
-    counts.produce = {
-      count: activeProductions.total,
-      label: `${activeProductions.total} Active`
-    };
-    counts.assemble = {
-      count: activeProductions.stageBreakdown.find((item) => /assembl|timeline/i.test(item.stage))?.count ?? 0,
-      label: `${activeProductions.stageBreakdown.find((item) => /assembl|timeline/i.test(item.stage))?.count ?? 0} In Progress`
-    };
-    counts.quality = {
-      count: activeProductions.productions.filter((item) => /review|quality/i.test(item.stage)).length,
-      label: `${activeProductions.productions.filter((item) => /review|quality/i.test(item.stage)).length} In Review`
-    };
-    counts.export = {
-      count: activeProductions.productions.filter((item) => /export|render/i.test(item.stage)).length,
-      label: `${activeProductions.productions.filter((item) => /export|render/i.test(item.stage)).length} Exporting`
-    };
-    counts.publish = {
-      count: dashboard.opportunities.filter((item) => /publish|released|today/i.test(item.status)).length,
-      label: `${dashboard.opportunities.filter((item) => /publish|released|today/i.test(item.status)).length} Today`
-    };
-    counts.monitor = {
-      count: dashboard.metrics.active,
-      label: `${dashboard.metrics.active} Monitoring`
-    };
-    counts.learn = { count: null, label: "AI Learning" };
-    counts.repeat = { count: null, label: "Auto Loop" };
-  } catch (error) {
-    console.error("production-lifecycle.counts.fallback", error);
-    return counts;
-  }
-
-  return counts;
-}
-
 export async function getProductionLifecycleSnapshot(): Promise<ProductionLifecycleSnapshot> {
-  const [settings, liveCounts] = await Promise.all([readSettings(), liveStageCounts()]);
-  const source = Object.values(liveCounts).some((item) => item.count !== null) ? "live" : "fallback";
-
-  const stages: LifecycleStageStatus[] = productionLifecycleStages.map((stage) => {
-    const live = liveCounts[stage.id];
-    return {
-      id: stage.id,
-      order: stage.order,
-      label: stage.label,
-      count: live.count,
-      statusLabel: live.count !== null ? live.label : stage.statusLabel
-    };
-  });
+  const status = await getLifecycleStatus();
+  const currentStageId =
+    status.stages.find((stage) => stage.count > 0)?.id ??
+    productionLifecycleStages[0]?.id ??
+    "discover";
+  const settings: SnapshotSettings = {
+    autoAdvance: status.settings.autoAdvanceEnabled,
+    currentStageId,
+    stages: {},
+    updatedAt: status.settings.updatedAt ?? status.generatedAt
+  };
 
   return {
     settings,
-    stages,
-    generatedAt: new Date().toISOString(),
-    source
+    stages: productionLifecycleStages.map((stage) => {
+      const live = status.stages.find((item) => item.id === stage.id);
+      return {
+        id: stage.id,
+        order: stage.order,
+        label: stage.label,
+        statusLabel: live?.statusLabel ?? stage.statusLabel,
+        count: live?.count ?? 0
+      };
+    }),
+    generatedAt: status.generatedAt,
+    source: "live"
   };
 }
 
-export async function saveProductionLifecycleSettings(input: Partial<Pick<ProductionLifecycleSettings, "autoAdvance" | "currentStageId">>) {
-  const settings = await readSettings();
-  const next: ProductionLifecycleSettings = {
-    ...settings,
-    autoAdvance: input.autoAdvance ?? settings.autoAdvance,
-    currentStageId: input.currentStageId ?? settings.currentStageId,
-    updatedAt: new Date().toISOString()
-  };
-  await writeSettings(next);
-  return next;
+export async function saveProductionLifecycleSettings(
+  input: Partial<Pick<SnapshotSettings, "autoAdvance" | "currentStageId">>
+) {
+  const saved = await saveLifecycleSettings({
+    autoAdvanceEnabled: input.autoAdvance
+  });
+
+  return {
+    autoAdvance: saved.autoAdvanceEnabled,
+    currentStageId: input.currentStageId ?? productionLifecycleStages[0]?.id ?? "discover",
+    stages: {},
+    updatedAt: saved.updatedAt ?? new Date().toISOString()
+  } satisfies SnapshotSettings;
 }
 
 export async function getStageChecklist(stageId: WorkflowStage) {
-  const settings = await readSettings();
+  const pool = await getMssqlPool();
+  const workspaceId = await activeWorkspaceId(pool);
+  const latest = await pool
+    .request()
+    .input("workspace", sql.UniqueIdentifier, workspaceId)
+    .input("stage", sql.NVarChar(50), stageId)
+    .query<{ Status: string; CompletedAt: Date | null }>(
+      `SELECT TOP(1) Status, CreatedAt AS CompletedAt
+       FROM cacsms.ProductionLifecycleStageCompletions
+       WHERE WorkspaceId=@workspace AND LifecycleStage=@stage
+       ORDER BY CreatedAt DESC`
+    );
+
+  const state = defaultChecklistState();
+  if (latest.recordset[0]?.Status === "ready") {
+    for (const item of checklistItems) {
+      state.checklist[item] = true;
+    }
+    state.ready = true;
+    state.completedAt = latest.recordset[0].CompletedAt?.toISOString() ?? null;
+  }
+
   return {
     stageId,
     items: checklistItems,
-    state: stageState(settings, stageId)
+    state
   };
 }
 
-export async function updateStageChecklist(stageId: WorkflowStage, checklist: Partial<Record<LifecycleChecklistItem, boolean>>) {
-  const settings = await readSettings();
-  const current = stageState(settings, stageId);
-  const merged = {
-    ...current,
+export async function updateStageChecklist(
+  stageId: WorkflowStage,
+  checklist: Partial<Record<LifecycleChecklistItem, boolean>>
+) {
+  const current = await getStageChecklist(stageId);
+  return {
+    ...current.state,
     checklist: {
-      ...current.checklist,
+      ...current.state.checklist,
       ...checklist
     }
   };
-  settings.stages[stageId] = merged;
-  settings.updatedAt = new Date().toISOString();
-  await writeSettings(settings);
-  return merged;
 }
 
 export async function markStageReady(stageId: WorkflowStage) {
-  const settings = await readSettings();
-  const current = stageState(settings, stageId);
-  const readyState = {
-    ...current,
-    checklist: checklistItems.reduce(
-      (acc, item) => {
-        acc[item] = true;
-        return acc;
-      },
-      {} as Record<LifecycleChecklistItem, boolean>
-    ),
-    ready: true,
-    completedAt: new Date().toISOString()
-  };
-  settings.stages[stageId] = readyState;
-  settings.updatedAt = new Date().toISOString();
-
-  const stage = productionLifecycleStages.find((item) => item.id === stageId);
-  const nextStage = productionLifecycleStages.find((item) => item.order === (stage?.order ?? 0) + 1);
-  if (settings.autoAdvance && nextStage) {
-    settings.currentStageId = nextStage.id;
-  }
-
-  await writeSettings(settings);
-
-  try {
-    const pool = await getMssqlPool();
-    await pool.request().input("stageId", sql.NVarChar(40), stageId).input("nextStageId", sql.NVarChar(40), nextStage?.id ?? stageId).query(`
-      UPDATE cacsms.Productions
-      SET Stage = @nextStageId, UpdatedAt = SYSUTCDATETIME()
-      WHERE Status IN (N'active', N'queued', N'in-review') AND Stage = @stageId;
-    `);
-  } catch (error) {
-    console.error("production-lifecycle.mark-ready.db-skip", error);
-  }
+  const result = await markLifecycleStageReady({
+    stageId,
+    checks: [...checklistItems]
+  });
 
   return {
     stageId,
-    state: readyState,
-    advancedTo: settings.autoAdvance ? nextStage?.id ?? null : null,
-    settings
+    state: {
+      checklist: checklistItems.reduce(
+        (acc, item) => {
+          acc[item] = result.status === "ready";
+          return acc;
+        },
+        {} as Record<LifecycleChecklistItem, boolean>
+      ),
+      ready: result.status === "ready",
+      completedAt: result.status === "ready" ? new Date().toISOString() : null
+    },
+    advancedTo: null,
+    validationErrors: result.validationErrors
   };
 }
 
@@ -625,27 +511,25 @@ export async function advanceOpportunityState(stageId: WorkflowStage) {
     discover: "discovered",
     research: "researching",
     evaluate: "prioritized",
-    "pre-plan": "preplanned",
+    "pre-plan": "ready",
     schedule: "scheduled",
     produce: "producing",
     publish: "published",
     learn: "learning"
   };
-  const target = mapping[stageId];
-  if (!target) return;
+  const nextStatus = mapping[stageId];
+  if (!nextStatus) return;
 
-  try {
-    const pool = await getMssqlPool();
-    await pool.request().input("status", sql.NVarChar(40), target).query(`
-      UPDATE TOP (1) cacsms.Opportunities
-      SET Status = @status, UpdatedAt = SYSUTCDATETIME()
-      WHERE IsArchived = 0
-      ORDER BY OpportunityScore DESC, CreatedAt DESC;
+  const pool = await getMssqlPool();
+  const workspaceId = await activeWorkspaceId(pool);
+  await pool
+    .request()
+    .input("workspace", sql.UniqueIdentifier, workspaceId)
+    .input("status", sql.NVarChar(50), nextStatus)
+    .query(`
+      UPDATE TOP(1) cacsms.Opportunities
+      SET Status=@status, UpdatedAt=SYSUTCDATETIME()
+      WHERE WorkspaceId=@workspace AND IsArchived=0
+      ORDER BY UpdatedAt DESC
     `);
-  } catch (error) {
-    console.error("production-lifecycle.advance-opportunity.db-skip", error);
-  }
 }
-
-export { checklistItems };
->>>>>>> Stashed changes

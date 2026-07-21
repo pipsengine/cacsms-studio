@@ -161,7 +161,6 @@ export async function ModuleWorkspace({
     }
   }
 
-<<<<<<< Updated upstream
   if (module.slug === "story-learning" && workspace?.slug === "structure-dashboard") {
     return <StructureDashboard />;
   }
@@ -348,11 +347,6 @@ export async function ModuleWorkspace({
         />
       );
     }
-=======
-  const href = workspace ? `/${moduleSlug}/${workspaceSlug}` : `/${moduleSlug}`;
-  if (!isWorkspaceRouteImplemented(href)) {
-    return <ComingSoonPage title={title} href={href} />;
->>>>>>> Stashed changes
   }
 
   return (

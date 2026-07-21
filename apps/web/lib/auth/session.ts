@@ -25,6 +25,49 @@ export function sessionCookieName() {
   return SESSION_COOKIE;
 }
 
+export async function getOrCreateBootstrapUserId(): Promise<string | null> {
+  const pool = await getMssqlPool();
+  const existing = await pool.request().query<{ UserId: string }>(
+    `SELECT TOP(1) CONVERT(nvarchar(36), UserId) UserId
+     FROM cacsms.Users
+     WHERE IsActive=1
+     ORDER BY CASE Role WHEN N'administrator' THEN 0 WHEN N'manager' THEN 1 ELSE 2 END, CreatedAt`
+  );
+  const existingUserId = existing.recordset[0]?.UserId;
+  if (existingUserId) return existingUserId;
+
+  const workspace = await pool.request().query<{ WorkspaceId: string }>(
+    `SELECT TOP(1) CONVERT(nvarchar(36), WorkspaceId) WorkspaceId
+     FROM cacsms.Workspaces
+     WHERE Status=N'active'
+     ORDER BY CreatedAt`
+  );
+  const workspaceId = workspace.recordset[0]?.WorkspaceId;
+  if (!workspaceId) return null;
+
+  const seeded = await pool
+    .request()
+    .input("workspaceId", sql.UniqueIdentifier, workspaceId)
+    .input("email", sql.NVarChar(320), "administrator@cacsms.local")
+    .input("displayName", sql.NVarChar(200), "CACSMS Administrator")
+    .query<{ UserId: string }>(`
+      IF EXISTS (
+        SELECT 1
+        FROM cacsms.Users
+        WHERE WorkspaceId=@workspaceId AND Email=@email
+      )
+        SELECT TOP(1) CONVERT(nvarchar(36), UserId) UserId
+        FROM cacsms.Users
+        WHERE WorkspaceId=@workspaceId AND Email=@email;
+      ELSE
+        INSERT cacsms.Users (WorkspaceId, Email, DisplayName, Role, IsActive)
+        OUTPUT CONVERT(nvarchar(36), inserted.UserId) UserId
+        VALUES (@workspaceId, @email, @displayName, N'administrator', 1);
+    `);
+
+  return seeded.recordset[0]?.UserId ?? null;
+}
+
 export async function createSession(userId: string): Promise<{ token: string; session: StudioSession }> {
   const pool = await getMssqlPool();
   const user = await pool.request().input("userId", sql.UniqueIdentifier, userId).query<{
@@ -99,11 +142,7 @@ export async function resolveSession(token: string | null | undefined): Promise<
 }
 
 export async function getDefaultSessionUser(): Promise<StudioSession | null> {
-  const pool = await getMssqlPool();
-  const result = await pool.request().query<{ UserId: string }>(
-    `SELECT TOP(1) CONVERT(nvarchar(36), UserId) UserId FROM cacsms.Users WHERE IsActive=1 ORDER BY CASE Role WHEN N'administrator' THEN 0 WHEN N'manager' THEN 1 ELSE 2 END, CreatedAt`
-  );
-  const userId = result.recordset[0]?.UserId;
+  const userId = await getOrCreateBootstrapUserId();
   if (!userId) return null;
   const { session } = await createSession(userId);
   return session;

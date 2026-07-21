@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getProductionLifecycleStage } from "@cacsms/contracts";
 import {
   getProductionLifecycleSnapshot,
   saveProductionLifecycleSettings
@@ -22,7 +23,13 @@ export async function PATCH(request: Request) {
       autoAdvance?: boolean;
       currentStageId?: string;
     };
-    const settings = await saveProductionLifecycleSettings(body);
+    const stage = body.currentStageId
+      ? getProductionLifecycleStage(body.currentStageId)
+      : null;
+    const settings = await saveProductionLifecycleSettings({
+      autoAdvance: body.autoAdvance,
+      currentStageId: stage?.id
+    });
     return NextResponse.json({ settings });
   } catch (error) {
     console.error("production-lifecycle.settings.failed", error);

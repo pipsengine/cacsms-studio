@@ -35,7 +35,10 @@ export async function POST(request: Request) {
     };
 
     if (body.action === "scheduler") {
-      return NextResponse.json(await runStoryboardScheduler(), {
+      void runStoryboardScheduler().catch((error) => {
+        console.error("storyboard.scheduler.failed", error);
+      });
+      return NextResponse.json(await getStoryboardWorkspaceData(), {
         headers: { "Cache-Control": "no-store" }
       });
     }

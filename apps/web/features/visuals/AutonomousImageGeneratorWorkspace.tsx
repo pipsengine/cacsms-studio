@@ -458,6 +458,7 @@ export function AutonomousImageGeneratorWorkspace({
   const [imageLoadState, setImageLoadState] = useState<ImageLoadState>("idle");
   const [imageLoadError, setImageLoadError] = useState<string | null>(null);
   const cycleInFlight = useRef(false);
+  const streamEstablished = useRef(false);
   const acknowledgedAssets = useRef(new Set<string>());
   const reportedFailures = useRef(new Set<string>());
 
@@ -559,6 +560,10 @@ export function AutonomousImageGeneratorWorkspace({
   useEffect(() => {
     const eventSource = new EventSource("/api/visuals/image-generator/events");
 
+    eventSource.onopen = () => {
+      setStreamDetail("SSE connection established. Waiting for live image generator events.");
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as Partial<ImageGeneratorPayload> & { message?: string };
@@ -570,6 +575,7 @@ export function AutonomousImageGeneratorWorkspace({
         }
 
         if (typeof payload.generatedAt === "string") {
+          streamEstablished.current = true;
           const nextPayload = payload as ImageGeneratorPayload;
           setData(nextPayload);
           setLastSyncAt(nextPayload.generatedAt);
@@ -586,7 +592,11 @@ export function AutonomousImageGeneratorWorkspace({
 
     eventSource.onerror = () => {
       setStreamLive(false);
-      setStreamDetail("SSE connection is unavailable. Polling fallback remains active.");
+      setStreamDetail(
+        streamEstablished.current
+          ? "SSE connection is reconnecting. Polling fallback remains active."
+          : "SSE connection is unavailable. Polling fallback remains active."
+      );
     };
 
     return () => {

@@ -21,11 +21,12 @@ async function main() {
   const productionId = process.argv[2] || DEFAULT_PRODUCTION_ID;
   const prompt = [
     "Retest revision after stricter visual QA.",
-    "Photorealistic documentary medium-wide photograph of contemporary Nigerian business professionals in a Lagos corporate AI operations office.",
-    "One clear foreground adult professional centered inside the safe area, full natural unmasked face visible, complete head and upper body visible, natural skin texture, normal eyes, realistic hands using a laptop or workstation.",
+    "Photorealistic documentary close-up of a Nigerian factory maintenance professional actively reviewing a predictive maintenance dashboard, not a wide office scene.",
+    "One clear foreground adult professional centered inside the safe area, full natural unmasked face visible, complete head, shoulders and hands visible, natural skin texture, sharp eyes, realistic hands using a maintenance console, tablet, laptop or handheld diagnostic tool.",
+    "Do not render an empty office, monitor wall, or environment-only scene. The human subject must remain dominant and the room context must stay secondary.",
     "AI appears only as software dashboards and analytics screens, never as robotic or cybernetic facial or body features.",
     "Modern corporate clothing only: blazer, shirt, business dress, smart-casual workwear. No mask, no helmet, no visor, no cybernetic face, no ceremonial attire, no festival clothing, no default traditional costume.",
-    "Moderate depth of field, readable Lagos corporate interior, realistic lighting, grounded shadows, no foreign signage, no watermarks or logos."
+    "Readable Nigerian enterprise or industrial operations context, realistic lighting, grounded shadows, no foreign signage, no watermarks or logos."
   ].join(" ");
 
   const pool = await getMssqlPool();

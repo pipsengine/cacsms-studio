@@ -36,6 +36,17 @@
   - `http://127.0.0.1:3025/health` unavailable
   - `local-models/image-renderer/.venv` absent before provisioning
   - no local model files present under `local-models/image-renderer/models`
+- After SDXL provisioning:
+  - `http://127.0.0.1:3025/health` returned `modelLoaded=true`
+  - the daemon accepted real render requests and reported `activeRender=true`
+  - the node service env confirmed `CACSMS_LOCAL_IMAGE_DAEMON_URL=http://127.0.0.1:3025`
+  - the node service env confirmed `CACSMS_LOCAL_IMAGE_RENDER_TIMEOUT_MS=3600000`
+- Live production evidence showed the queue could still display `state=Generating` with `browserLoadStatus=pending` and no persisted asset URL.
+- Follow-up polling captured a stale-state symptom:
+  - one poll returned daemon `activeRender=false`, `completedRenders=0`, `failedRenders=5` while the top production still reported `state=Generating`
+  - a later poll returned daemon `activeRender=true`, confirming real renders do occur but queue state could outlive daemon activity
+- Root-cause refinement:
+  - the local provider was not simply "down"; instead, local CPU renders are very slow and the queue state machine could preserve `Generating` long after no daemon render was active.
 
 ## Verification Conclusion
 - Pre-fix: scheduler stopped during re-validation of a legacy completed variant because missing persisted PNG files threw uncaught filesystem errors.
@@ -45,3 +56,4 @@
   2. install diffusion/runtime dependencies
   3. download the configured photoreal model
   4. apply IIS/Windows-service local-image configuration and rerun the scheduler
+  5. patch stale local-generation recovery so jobs only remain `Generating` when the daemon is actually active or within a short grace window
