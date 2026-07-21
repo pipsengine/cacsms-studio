@@ -74,10 +74,6 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    void fetch("/api/auth/session", { credentials: "include" }).catch(() => undefined);
-  }, []);
-
   function toggleSystem() {
     setSystemRunning((current) => {
       const next = !current;
@@ -138,15 +134,20 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
                       setOpenModule(event.currentTarget.open ? module.slug : null);
                     }}
                   >
-                    <summary className={`nav-item${isActive ? " active" : ""}`}>
+                    <summary className={`nav-item${isActive ? " active" : ""}`} aria-label={`Toggle ${module.label} navigation`}>
                       <Icon size={16} aria-hidden="true" />
-                      <Link href={hrefForModule(module.slug)} prefetch={false}>
-                        {module.label}
-                      </Link>
+                      <span className="nav-item-label">{module.label}</span>
                       <span className="nav-badge">{formatCount(module.children.length, module.slug)}</span>
                       {isOpen ? <ChevronDown className="nav-chevron" aria-hidden="true" /> : <ChevronRight className="nav-chevron" aria-hidden="true" />}
                     </summary>
                     <div className="pipeline-subnav">
+                      <Link
+                        href={hrefForModule(module.slug)}
+                        prefetch={false}
+                        aria-current={pathname === hrefForModule(module.slug) ? "page" : undefined}
+                      >
+                        {module.label}
+                      </Link>
                       {module.children.map((child) => (
                         <Link
                           href={hrefForChild(module.slug, child.slug)}

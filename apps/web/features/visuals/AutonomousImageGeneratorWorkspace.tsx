@@ -732,7 +732,7 @@ export function AutonomousImageGeneratorWorkspace({
             <span>{formatClock(lastSyncAt ?? content.updatedAt)}</span>
             <small>{formatTime(lastSyncAt ?? content.updatedAt)}</small>
           </div>
-          <button className={styles.runtimeButton} disabled>
+          <button className={styles.runtimeButton} disabled aria-live="polite" aria-atomic="true">
             <Activity size={14} />
             <span>
               {cycleRunning ? "Autonomy Cycle Running" : "Autonomy Runtime"}
@@ -774,7 +774,7 @@ export function AutonomousImageGeneratorWorkspace({
         <DataCell label="State" value={content.state} tone={stateTone(content.state)} sub={content.stepLabel} />
         <DataCell label="Priority" value={content.priority} sub={`${content.variantCount} variants`} />
         <DataCell label="Updated" value={formatClock(content.updatedAt)} sub={streamLive ? "Live event sync" : hasPersistedCandidate ? (connected ? "Polling sync" : "Awaiting sync") : "Queue monitor"} />
-        <div className={styles.contextAction}>
+        <div className={styles.contextAction} role="status" aria-live="polite" aria-atomic="true">
           <small>Routing status</small>
           <b>{content.routing.status}</b>
           <span>{content.routing.target}</span>
@@ -1036,7 +1036,7 @@ export function AutonomousImageGeneratorWorkspace({
               />
             </Panel>
 
-            <Panel title="Routing Status" tag={content.routing.status}>
+            <Panel title="Routing Status" tag={content.routing.status} liveRegion>
               <Rows
                 compact
                 items={[
@@ -1052,7 +1052,7 @@ export function AutonomousImageGeneratorWorkspace({
         </div>
 
         <div className={styles.rightColumn}>
-            <Panel title="Live Image Agent" tag={streamLive ? "Live stream" : hasPersistedCandidate ? (connected ? "Polling" : "Awaiting sync") : "Waiting"}>
+            <Panel title="Live Image Agent" tag={streamLive ? "Live stream" : hasPersistedCandidate ? (connected ? "Polling" : "Awaiting sync") : "Waiting"} liveRegion>
             <Rows
               compact
               items={[
@@ -1128,7 +1128,7 @@ export function AutonomousImageGeneratorWorkspace({
             </div>
           </Panel>
 
-          <Panel title="Autonomous Decisions (Live)" tag={`${content.decisions.length} entries`}>
+          <Panel title="Autonomous Decisions (Live)" tag={`${content.decisions.length} entries`} liveRegion>
             <div className={styles.decisionList}>
               {content.decisions.length ? (
                 content.decisions.map((decision, index) => (
@@ -1180,7 +1180,7 @@ function Workflow({ active, state }: { active: number; state: ImageGenerationSta
 }
 
 function Banner({ children, tone }: { children: ReactNode; tone: "warning" | "danger" | "good" }) {
-  return <div className={`${styles.banner} ${tone === "warning" ? styles.warningBanner : tone === "danger" ? styles.dangerBanner : styles.goodBanner}`}>{children}</div>;
+  return <div role="alert" className={`${styles.banner} ${tone === "warning" ? styles.warningBanner : tone === "danger" ? styles.dangerBanner : styles.goodBanner}`}>{children}</div>;
 }
 
 function StatusPill({
@@ -1193,7 +1193,7 @@ function StatusPill({
   tone: "good" | "warning" | "danger";
 }) {
   return (
-    <span className={`${styles.statusPill} ${styles[tone]}`}>
+    <span className={`${styles.statusPill} ${styles[tone]}`} role="status" aria-live="polite" aria-atomic="true">
       {icon}
       {label}
     </span>
@@ -1220,11 +1220,26 @@ function DataCell({
   );
 }
 
-function Panel({ title, tag, children }: { title: string; tag: string; children: ReactNode }) {
+function Panel({
+  title,
+  tag,
+  children,
+  liveRegion = false
+}: {
+  title: string;
+  tag: string;
+  children: ReactNode;
+  liveRegion?: boolean;
+}) {
   return (
-    <section className={styles.panel}>
+    <section
+      className={styles.panel}
+      role={liveRegion ? "status" : undefined}
+      aria-live={liveRegion ? "polite" : undefined}
+      aria-atomic={liveRegion ? "true" : undefined}
+    >
       <div className={styles.panelTitle}>
-        <h3>{title}</h3>
+        <h2>{title}</h2>
         <span>{tag}</span>
       </div>
       {children}

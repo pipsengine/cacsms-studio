@@ -2274,7 +2274,10 @@ async function recoverStuckGenerationJob(
   const generatingVariants = variants.filter((variant) => variant.State === "Generating");
   const jobGenerating = job.State === "Generating";
   if (!jobGenerating && generatingVariants.length === 0) return job;
-  if (jobGenerating && await localGenerationStillRunning(job.UpdatedAt)) return job;
+  // Lease heartbeats refresh UpdatedAt on every scheduler pass, so use the last
+  // actual state transition to detect stale "Generating" jobs.
+  const jobGenerationStartedAt = job.LastTransitionAt ?? job.UpdatedAt;
+  if (jobGenerating && await localGenerationStillRunning(jobGenerationStartedAt)) return job;
   if (await Promise.all(generatingVariants.map(async (variant) => localGenerationStillRunning(variant.UpdatedAt))).then((states) => states.some(Boolean))) {
     return job;
   }

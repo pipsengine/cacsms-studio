@@ -56,7 +56,7 @@ textarea {
 
 .shell.sidebar-collapsed .brand-copy,
 .shell.sidebar-collapsed .nav-label,
-.shell.sidebar-collapsed .nav-item a,
+.shell.sidebar-collapsed .nav-item-label,
 .shell.sidebar-collapsed .nav-badge,
 .shell.sidebar-collapsed .nav-chevron,
 .shell.sidebar-collapsed .pipeline-subnav,
@@ -1996,11 +1996,10 @@ textarea {
   color: #fff;
 }
 
-.nav-item a {
+.nav-item-label {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2264,7 +2263,7 @@ textarea {
   .brand-copy,
   .sidebar-toggle,
   .nav-label,
-  .nav-item a,
+  .nav-item-label,
   .nav-badge,
   .nav-chevron,
   .pipeline-subnav,
