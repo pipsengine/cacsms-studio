@@ -295,8 +295,9 @@ def build_diffusion_prompts(prompt: str) -> tuple[str, str]:
 
     locale_bits = f"Lagos Nigeria, {locale_city}" if locale_city else "Lagos Nigeria"
     enhanced = (
-        f"photorealistic documentary photo, {scene_core}, {locale_bits}, "
-        "Black Nigerian business professionals, corporate AI office, sharp natural faces, detailed eyes, 35mm wide shot"
+        f"photorealistic documentary photo, medium close-up, {scene_core}, {locale_bits}, "
+        "one Black Nigerian business professional dominant in frame, large sharp face, detailed eyes, "
+        "corporate AI office background, 50mm lens eye-level"
     )
     negative = (
         "deformed face, blurry face, cartoon, illustration, anime, bad hands, extra fingers, "

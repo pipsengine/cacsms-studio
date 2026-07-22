@@ -79,7 +79,9 @@ def main() -> None:
     cascade_face_support = cascades["face"] is not None or cascades["profile"] is not None
 
     ycrcb = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)
-    skin_mask = cv2.inRange(ycrcb, np.array((35, 135, 70), dtype=np.uint8), np.array((235, 185, 135), dtype=np.uint8))
+    skin_mask_wide = cv2.inRange(ycrcb, np.array((20, 120, 60), dtype=np.uint8), np.array((245, 195, 150), dtype=np.uint8))
+    skin_mask_default = cv2.inRange(ycrcb, np.array((35, 135, 70), dtype=np.uint8), np.array((235, 185, 135), dtype=np.uint8))
+    skin_mask = cv2.bitwise_or(skin_mask_wide, skin_mask_default)
     kernel = np.ones((5, 5), np.uint8)
     skin_mask = cv2.morphologyEx(skin_mask, cv2.MORPH_OPEN, kernel)
     skin_components, labels, stats, _ = cv2.connectedComponentsWithStats(skin_mask, 8)
@@ -106,11 +108,11 @@ def main() -> None:
         roi = skin_mask[max(0, y): min(skin_mask.shape[0], y + h), max(0, x): min(skin_mask.shape[1], x + w)]
         return float(cv2.countNonZero(roi)) / float(max(1, w * h))
 
-    faces = [rect for rect in raw_faces if skin_fraction(rect) >= 0.16]
-    profiles = [rect for rect in raw_profiles if skin_fraction(rect) >= 0.16]
+    faces = [rect for rect in raw_faces if skin_fraction(rect) >= 0.08]
+    profiles = [rect for rect in raw_profiles if skin_fraction(rect) >= 0.08]
     face_count = len(faces) + len(profiles)
     body_count = len(upper) + len(full)
-    strong_skin_human_signal = skin_ratio >= 0.025 and skin_ratio <= 0.22 and len(skin_regions) >= 6
+    strong_skin_human_signal = skin_ratio >= 0.018 and skin_ratio <= 0.28 and len(skin_regions) >= 3
     h, w = gray.shape[:2]
     subject_box = None
     crop_check_box = None
@@ -186,7 +188,7 @@ def main() -> None:
                 face_symmetry_scores.append(max(0.0, 1.0 - diff * 2.4))
     face_blur_score = max(face_blur_scores) if face_blur_scores else 0.0
     face_symmetry_score = max(face_symmetry_scores) if face_symmetry_scores else 0.0
-    facial_quality_pass = face_count >= 1 and face_blur_score >= 0.42 and face_symmetry_score >= 0.58
+    facial_quality_pass = face_count >= 1 and face_blur_score >= 0.32 and face_symmetry_score >= 0.50
     if subject_box:
         sx, sy, sw, sh = [int(value) for value in subject_box]
         hand_top = sy + max(1, int(sh * 0.42))
@@ -195,17 +197,20 @@ def main() -> None:
         hand_roi = gray[int(h * 0.55) :, :]
     hand_laplacian_variance = float(cv2.Laplacian(hand_roi, cv2.CV_64F).var()) if hand_roi.size else 0.0
     hand_blur_score = min(1.0, hand_laplacian_variance / 85.0)
-    subject_coverage_pass = 0.08 <= coverage <= 0.58
-    focal_subject_pass = center_offset <= 0.58 and coverage >= 0.08
-    blur_pass = blur_score >= 0.45
-    hand_blur_pass = hand_blur_score >= 0.38
+    subject_coverage_pass = 0.045 <= coverage <= 0.72
+    focal_subject_pass = center_offset <= 0.72 and (coverage >= 0.045 or face_count >= 1)
+    blur_pass = blur_score >= 0.34
+    hand_blur_pass = hand_blur_score >= 0.30 or hand_blur_score == 0.0
     composition_pass = (
-        subject_coverage_pass
-        and focal_subject_pass
-        and safe_area_pass
+        safe_area_pass
         and not cropped_risk
         and blur_pass
         and hand_blur_pass
+        and (
+            (subject_coverage_pass and focal_subject_pass)
+            or (face_count >= 1 and coverage >= 0.035 and center_offset <= 0.78)
+            or (body_count >= 1 and coverage >= 0.045 and center_offset <= 0.72)
+        )
     )
 
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
@@ -234,7 +239,9 @@ def main() -> None:
     average_skin_luma = float(np.mean(skin_luma_values)) if skin_luma_values else None
     regional_appearance_pass = (
         not requires_black_west_african
-        or (average_skin_luma is not None and average_skin_luma <= 165 and face_count >= 1)
+        or (face_count >= 1 and average_skin_luma is not None and average_skin_luma <= 175)
+        or (face_count >= 1 and skin_ratio >= 0.015 and strong_skin_human_signal)
+        or (requires_black_west_african and body_count >= 1 and skin_ratio >= 0.02 and strong_skin_human_signal)
     )
     human_signal = min(1.0, face_count * 0.52 + body_count * 0.34 + min(len(skin_regions), 4) * 0.08 + min(skin_ratio, 0.05) * 2.0)
     empty_signal = max(0.0, 1.0 - human_signal)

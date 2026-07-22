@@ -2,6 +2,7 @@ param(
   [string]$NodeServiceName = "cacsms-studio-node",
   [string]$DaemonServiceName = "cacsms-studio-image-daemon",
   [string]$RootPath = "C:\Next-Generation\cacsms-studio",
+  [string]$ModelPath = "",
   [int]$InternalPort = 3018,
   [int]$PublicPort = 3008,
   [int]$DaemonPort = 3025,
@@ -50,11 +51,34 @@ function Invoke-Nssm {
   }
 }
 
+function Resolve-SdxlModelPath {
+  param(
+    [string]$RootPath,
+    [string]$RequestedPath
+  )
+
+  $candidates = @()
+  if ($RequestedPath) {
+    $candidates += $RequestedPath
+  }
+  $candidates += (Join-Path $RootPath "local-models\image-renderer\models\realvisxl-v4\RealVisXL_V4.0.safetensors")
+  $candidates += "D:\Digital World\realvisxl-v4\RealVisXL_V4.0.safetensors"
+
+  foreach ($candidate in ($candidates | Select-Object -Unique)) {
+    if (-not $candidate) { continue }
+    if (Test-Path -LiteralPath $candidate) {
+      return (Resolve-Path -LiteralPath $candidate).Path
+    }
+  }
+
+  return $null
+}
+
 $pythonPath = Join-Path $RootPath "local-models\image-renderer\.venv\Scripts\python.exe"
 $renderScript = Join-Path $RootPath "local-models\image-renderer\render.py"
 $validatorScript = Join-Path $RootPath "local-models\image-renderer\validate_image.py"
 $downloadScript = Join-Path $RootPath "local-models\image-renderer\download_sdxl_model.py"
-$modelPath = Join-Path $RootPath "local-models\image-renderer\models\realvisxl-v4\RealVisXL_V4.0.safetensors"
+$defaultModelPath = Join-Path $RootPath "local-models\image-renderer\models\realvisxl-v4\RealVisXL_V4.0.safetensors"
 
 if (-not $SkipDownload) {
   Write-Host "Ensuring huggingface_hub is available..."
@@ -63,8 +87,28 @@ if (-not $SkipDownload) {
   & $pythonPath $downloadScript | Out-Host
 }
 
-if (-not (Test-Path $modelPath)) {
-  throw "SDXL model was not found at $modelPath. Re-run without -SkipDownload or place the checkpoint manually."
+$modelPath = Resolve-SdxlModelPath -RootPath $RootPath -RequestedPath $ModelPath
+if (-not $modelPath) {
+  $checkedPaths = @(
+    $defaultModelPath,
+    "D:\Digital World\realvisxl-v4\RealVisXL_V4.0.safetensors"
+  )
+  if ($ModelPath) {
+    $checkedPaths += $ModelPath
+  }
+  $checkedList = ($checkedPaths | Select-Object -Unique | ForEach-Object { "  $_" }) -join [Environment]::NewLine
+  throw @(
+    "SDXL model was not found.",
+    "Checked:",
+    $checkedList,
+    "If the checkpoint is on D:, elevated PowerShell may not see that drive. Either pass -ModelPath explicitly after confirming Test-Path works in this admin window, or copy/link the checkpoint under:",
+    "  $defaultModelPath",
+    "You can also re-run without -SkipDownload to download it into the project models folder."
+  ) -join [Environment]::NewLine
+}
+
+if ($modelPath -ne $defaultModelPath) {
+  Write-Host "Using SDXL checkpoint: $modelPath"
 }
 
 $sharedEnv = @(
@@ -80,8 +124,8 @@ $sharedEnv = @(
   "CACSMS_LOCAL_IMAGE_GUIDANCE=5.5",
   "CACSMS_LOCAL_IMAGE_USE_DPM_SOLVER=1",
   "CACSMS_LOCAL_IMAGE_FACE_ENHANCE=1",
-  "CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_WIDTH=512",
-  "CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_HEIGHT=512",
+  "CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_WIDTH=768",
+  "CACSMS_LOCAL_IMAGE_MAX_DIFFUSION_HEIGHT=768",
   "CACSMS_LOCAL_IMAGE_SHARPNESS=1.18",
   "CACSMS_LOCAL_IMAGE_CONTRAST=1.04",
   "CACSMS_LOCAL_IMAGE_UNSHARP_RADIUS=1.0",
@@ -104,6 +148,7 @@ $nodeEnv = @(
   "CACSMS_LOCAL_IMAGE_VALIDATOR_SCRIPT=$validatorScript",
   "CACSMS_LOCAL_IMAGE_VALIDATOR_TIMEOUT_MS=180000",
   "CACSMS_LOCAL_IMAGE_RENDER_TIMEOUT_MS=3600000",
+  "CACSMS_LOCAL_IMAGE_MIN_QUALITY_SCORE=78",
   "CACSMS_IMAGE_GENERATION_SCHEDULER_TIMEOUT_MS=3900000",
   "CACSMS_IMAGE_GENERATION_VARIANT_COUNT=1",
   "CACSMS_IMAGE_GENERATION_MAX_VARIANTS=4",

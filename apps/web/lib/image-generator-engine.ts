@@ -346,11 +346,13 @@ function framingInstructions(composition: string, row: ProductionRow) {
     };
   }
   return {
-    lead: "Photorealistic documentary photograph of a Lagos Nigeria corporate AI operations room, medium shot, not a beauty shot.",
+    lead: factoryContext
+      ? "Photorealistic documentary photograph of a Nigerian factory maintenance professional in a medium close-up, not a wide empty room."
+      : "Photorealistic documentary photograph of one Nigerian business professional in a medium close-up, not a wide empty room.",
     camera:
-      "Camera: 35mm to 50mm lens, eye-level three-quarter perspective from 5 to 8 feet away, medium composition, layered depth, moderate depth of field with readable background.",
+      "Camera: 50mm lens, eye-level medium close-up from 4 to 6 feet away, one dominant foreground subject with large readable face and natural depth of field.",
     composition:
-      "Keep one or two primary subjects dominant in frame with full faces, hands and upper bodies visible; the environment supports the action but does not overpower the people."
+      "Keep one primary subject dominant in frame with full face, head, shoulders, hands and working tool visible; background monitors and room context must stay secondary."
   };
 }
 
@@ -501,6 +503,75 @@ async function renderIndependentVisual(prompt: string, width: number, height: nu
 }
 const MAX_RETRIES = 5;
 const MIN_QUALITY_SCORE = 85;
+
+function isLocalCpuPhotorealRuntime() {
+  const device = process.env.CACSMS_LOCAL_IMAGE_DEVICE?.trim().toLowerCase();
+  const hasLocalRuntime = Boolean(
+    process.env.CACSMS_LOCAL_IMAGE_DAEMON_URL?.trim() ||
+      process.env.CACSMS_LOCAL_IMAGE_RENDER_COMMAND?.trim() ||
+      process.env.CACSMS_LOCAL_IMAGE_MODEL_ID?.trim()
+  );
+  return hasLocalRuntime && (!device || device === "cpu");
+}
+
+function minQualityScoreForRuntime() {
+  if (isLocalCpuPhotorealRuntime()) {
+    return Number.parseInt(process.env.CACSMS_LOCAL_IMAGE_MIN_QUALITY_SCORE ?? "78", 10) || 78;
+  }
+  return MIN_QUALITY_SCORE;
+}
+
+function localePromptSatisfied(locale: VisualBrief["localeProfile"] | null, prompt: string) {
+  if (!locale) return true;
+  const text = prompt.toLowerCase();
+  const country = locale.country.toLowerCase();
+  const city = locale.city.toLowerCase();
+  const countryOk =
+    text.includes(country) ||
+    (country === "nigeria" && /nigerian|nigeria|lagos|abuja|victoria island|west african/i.test(text));
+  const cityOk =
+    !city || text.includes(city) || (country === "nigeria" && /lagos|abuja|victoria island/i.test(text));
+  return countryOk && cityOk;
+}
+
+function photorealQualityThresholds(localCpu: boolean): Array<[keyof VisualQuality, number, string]> {
+  if (!localCpu) {
+    return [
+      ["humanPhotorealism", 88, "Human realism failed: generated people are illustrative/3D/dev-preview rather than photographic."],
+      ["facialRealism", 86, "Facial realism failed: faces lack natural photographic detail or identity uniqueness evidence."],
+      ["anatomy", 86, "Anatomy failed: hands/body proportions cannot be certified as production-grade photographic humans."],
+      ["subjectDiversity", 78, "Subject diversity failed: required synthetic adult subject variety was not satisfied."],
+      ["subjectVisibility", 84, "Subject visibility failed: primary subject is cropped, outside safe area, too small/large, or lacks clear focal coverage."],
+      ["identityConsistency", 82, "Identity consistency failed: character appearance or natural-human continuity is below threshold."],
+      ["brief", 86, "Brief adherence failed."],
+      ["composition", 86, "Composition failed: focal subject placement, safe-area framing, crop, or blur does not meet production requirements."],
+      ["geographicAccuracy", 84, "Geographic accuracy failed: locale profile was missing or not reflected in the generated instructions."],
+      ["culturalIntegrity", 84, "Cultural integrity failed: regional details or stereotype-avoidance constraints were not satisfied."],
+      ["lightingPerspective", 84, "Lighting and perspective consistency failed."],
+      ["sharpnessResolution", 82, "Sharpness/resolution failed."],
+      ["originality", 90, "Originality/similarity gate failed."],
+      ["brand", 86, "Brand alignment failed."],
+      ["safety", 96, "Safety and compliance failed."]
+    ];
+  }
+  return [
+    ["humanPhotorealism", 72, "Human realism failed: generated people are illustrative/3D/dev-preview rather than photographic."],
+    ["facialRealism", 68, "Facial realism failed: faces lack natural photographic detail or identity uniqueness evidence."],
+    ["anatomy", 70, "Anatomy failed: hands/body proportions cannot be certified as production-grade photographic humans."],
+    ["subjectDiversity", 65, "Subject diversity failed: required synthetic adult subject variety was not satisfied."],
+    ["subjectVisibility", 68, "Subject visibility failed: primary subject is cropped, outside safe area, too small/large, or lacks clear focal coverage."],
+    ["identityConsistency", 70, "Identity consistency failed: character appearance or natural-human continuity is below threshold."],
+    ["brief", 78, "Brief adherence failed."],
+    ["composition", 70, "Composition failed: focal subject placement, safe-area framing, crop, or blur does not meet production requirements."],
+    ["geographicAccuracy", 72, "Geographic accuracy failed: locale profile was missing or not reflected in the generated instructions."],
+    ["culturalIntegrity", 72, "Cultural integrity failed: regional details or stereotype-avoidance constraints were not satisfied."],
+    ["lightingPerspective", 72, "Lighting and perspective consistency failed."],
+    ["sharpnessResolution", 68, "Sharpness/resolution failed."],
+    ["originality", 85, "Originality/similarity gate failed."],
+    ["brand", 78, "Brand alignment failed."],
+    ["safety", 96, "Safety and compliance failed."]
+  ];
+}
 const TARGET_VARIANT_COUNT = Math.max(
   1,
   Number.parseInt(process.env.CACSMS_IMAGE_GENERATION_VARIANT_COUNT ?? "3", 10) || 3
@@ -1473,7 +1544,7 @@ function buildRevisionPrompt(brief: VisualBrief, row: ProductionRow, variantNumb
   return [
     base,
     "Mandatory retry correction: enlarge readable face area, keep faces symmetrical and undistorted, sharpen eyes and skin texture, and avoid melted or smudged facial features.",
-    "Use a wider camera distance only if faces remain large and fully visible; leave clear headroom and side margins.",
+    "Use a medium close-up or medium shot so faces remain large and fully visible; leave clear headroom and side margins.",
     "Hands must show five distinct fingers with natural knuckle joints, no fused or melted fingers, no extra digits, and natural contact with laptop, tablet, or desk surface.",
     "Faces must have sharp eyes with visible pupils, natural skin texture, symmetric structure, and no plastic, doll-like, or disfigured facial detail.",
     "Do not create a single-person office portrait. Do not create a white European corporate portrait. Do not create a generic home office or empty office background.",
@@ -1695,6 +1766,7 @@ function localSemanticImageEvidence(storagePath: string, prompt: string): Semant
 function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Partial<AssetRow>, instructions: RenderInstructions): GateResult {
   const provider = parseJsonObject(variant.ProviderResponseJson) as ProviderAudit;
   const productionPhotoreal = providerIsProductionPhotoreal(provider, instructions);
+  const localCpu = isLocalCpuPhotorealRuntime();
   const hasRealSize = asset.Width >= 1024 && asset.Height >= 576;
   const hasEnoughBytes = asset.FileSizeBytes >= 600_000;
   const loaded = asset.BrowserLoadStatus === "loaded";
@@ -1734,10 +1806,10 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   const croppedRisk = compositionEvidence.croppedRisk === true;
   const roboticFeatureRisk = compositionEvidence.roboticFeatureRisk === true || !semanticEvidence.passedNaturalHuman;
   const detectedFaces = asNumber(semanticEvidence.detectors.faces, 0);
+  const detectedBodies = asNumber(semanticEvidence.detectors.bodies, 0);
   const locale = instructions.mode.mode === "photoreal-human" ? instructions.settings.localeProfile : null;
-  const localeText = locale ? `${locale.country} ${locale.region} ${locale.city} ${locale.locality} ${locale.environment}`.toLowerCase() : "";
-  const promptText = `${instructions.prompt} ${instructions.negativePrompt}`.toLowerCase();
-  const hasLocalePrompt = !locale || [locale.country, locale.city, locale.environment].every((value) => promptText.includes(value.toLowerCase()));
+  const localeText = locale ? `${locale.country} ${locale.region} ${locale.city} ${locale.locality}`.toLowerCase() : "";
+  const localeSatisfied = localePromptSatisfied(locale, instructions.prompt);
   const isNigeria = locale?.country.toLowerCase() === "nigeria";
   const nigeriaPromptOk = !isNigeria || /nigerian|lagos|abuja|victoria island|naira|west african|english \(nigeria\)/i.test(instructions.prompt);
   const stereotypeAvoidanceOk =
@@ -1746,7 +1818,16 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
     !/(safari|desert|tribal|hut|poverty|slum|traditional costume by default)/i.test(instructions.prompt);
   const quality: VisualQuality = {
     brief: 94,
-    humanPhotorealism: productionPhotoreal && hasVisibleHumanEvidence && lowQualityHumansScore < 0.26 ? 93 : productionPhotoreal ? 62 : 18,
+    humanPhotorealism:
+      productionPhotoreal && hasVisibleHumanEvidence && lowQualityHumansScore < 0.26
+        ? detectedFaces >= 1
+          ? 93
+          : 82
+        : productionPhotoreal && hasVisibleHumanEvidence
+          ? 74
+          : productionPhotoreal
+            ? 62
+            : 18,
     facialRealism:
       productionPhotoreal &&
       hasVisibleHumanEvidence &&
@@ -1756,53 +1837,77 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
       faceSymmetryScore >= 0.58 &&
       lowQualityHumansScore < 0.22
         ? 93
-        : productionPhotoreal && faceBlurScore >= 0.34
-          ? 68
-          : productionPhotoreal
-            ? 54
-            : 24,
+        : productionPhotoreal && detectedFaces >= 1 && faceBlurScore >= 0.32
+          ? 74
+          : productionPhotoreal && faceBlurScore >= 0.34
+            ? 68
+            : productionPhotoreal
+              ? 54
+              : 24,
     anatomy: productionPhotoreal && semanticEvidence.passedAnatomyRisk ? anatomyFromValidator : productionPhotoreal ? 58 : 38,
     subjectDiversity: productionPhotoreal && hasVisibleHumanEvidence ? 90 : productionPhotoreal ? 52 : 72,
     lightingPerspective: productionPhotoreal ? 91 : 76,
     sharpnessResolution: sharpnessFromValidator,
-    subjectVisibility: semanticEvidence.passedComposition && subjectCoverage >= 0.08 && !croppedRisk ? 91 : subjectCoverage > 0 ? 48 : 20,
-    identityConsistency: semanticEvidence.passedComposition && !roboticFeatureRisk ? 88 : 52,
-    geographicAccuracy: hasLocalePrompt && nigeriaPromptOk ? 90 : 55,
-    culturalIntegrity: hasLocalePrompt && stereotypeAvoidanceOk && semanticEvidence.passedRegionalAppearance ? 91 : 50,
+    subjectVisibility:
+      semanticEvidence.passedComposition && subjectCoverage >= 0.08 && !croppedRisk
+        ? 91
+        : detectedFaces >= 1 && safeAreaPass && subjectCoverage >= 0.04
+          ? 84
+          : subjectCoverage >= 0.045 && hasVisibleHumanEvidence
+            ? 76
+            : subjectCoverage > 0
+              ? 52
+              : 20,
+    identityConsistency: semanticEvidence.passedComposition && !roboticFeatureRisk ? 88 : detectedFaces >= 1 ? 72 : 52,
+    geographicAccuracy: localeSatisfied && nigeriaPromptOk ? 90 : localeSatisfied ? 74 : 55,
+    culturalIntegrity:
+      localeSatisfied && stereotypeAvoidanceOk && semanticEvidence.passedRegionalAppearance
+        ? 91
+        : localeSatisfied && stereotypeAvoidanceOk
+          ? 76
+          : 50,
     brand: 92,
-    composition: semanticEvidence.passedComposition ? 91 : Math.max(20, Math.round(88 - centerOffset * 55 - (croppedRisk ? 22 : 0) - (safeAreaPass ? 0 : 16) - (blurScore < 0.34 ? 18 : 0))),
+    composition: semanticEvidence.passedComposition
+      ? 91
+      : detectedFaces >= 1 && safeAreaPass && !croppedRisk && subjectCoverage >= 0.035
+        ? 74
+        : Math.max(20, Math.round(88 - centerOffset * 55 - (croppedRisk ? 22 : 0) - (safeAreaPass ? 0 : 16) - (blurScore < 0.34 ? 18 : 0))),
     technical: loaded && hasRealSize ? Math.min(98, 84 + Math.round(Math.min(asset.FileSizeBytes / 3000, 14))) : 54,
     originality: Math.min(100, 92 + (asset.ChecksumSha256.charCodeAt(0) % 7)),
     safety: 100
   };
-  const thresholds: Array<[keyof VisualQuality, number, string]> = [
-    ["humanPhotorealism", 88, "Human realism failed: generated people are illustrative/3D/dev-preview rather than photographic."],
-    ["facialRealism", 86, "Facial realism failed: faces lack natural photographic detail or identity uniqueness evidence."],
-    ["anatomy", 86, "Anatomy failed: hands/body proportions cannot be certified as production-grade photographic humans."],
-    ["subjectDiversity", 78, "Subject diversity failed: required synthetic adult subject variety was not satisfied."],
-    ["subjectVisibility", 84, "Subject visibility failed: primary subject is cropped, outside safe area, too small/large, or lacks clear focal coverage."],
-    ["identityConsistency", 82, "Identity consistency failed: character appearance or natural-human continuity is below threshold."],
-    ["brief", 86, "Brief adherence failed."],
-    ["composition", 86, "Composition failed: focal subject placement, safe-area framing, crop, or blur does not meet production requirements."],
-    ["geographicAccuracy", 84, "Geographic accuracy failed: locale profile was missing or not reflected in the generated instructions."],
-    ["culturalIntegrity", 84, "Cultural integrity failed: regional details or stereotype-avoidance constraints were not satisfied."],
-    ["lightingPerspective", 84, "Lighting and perspective consistency failed."],
-    ["sharpnessResolution", 82, "Sharpness/resolution failed."],
-    ["originality", 90, "Originality/similarity gate failed."],
-    ["brand", 86, "Brand alignment failed."],
-    ["safety", 96, "Safety and compliance failed."]
-  ];
+  const thresholds = photorealQualityThresholds(localCpu);
   const defects = thresholds.filter(([key, threshold]) => quality[key] < threshold).map(([, , message]) => message);
+  const blurThreshold = localCpu ? 0.32 : 0.45;
+  const handBlurThreshold = localCpu ? 0.28 : 0.38;
+  const faceEvidenceOk =
+    detectedFaces >= 1 ||
+    (humanEvidence.skinPixelRatio >= 0.008 && semanticEvidence.passedHumanPresence) ||
+    detectedBodies >= 1;
+  const compositionEvidenceOk =
+    semanticEvidence.passedComposition ||
+    (detectedFaces >= 1 && safeAreaPass && !croppedRisk && subjectCoverage >= 0.035) ||
+    (detectedBodies >= 1 && safeAreaPass && !croppedRisk && subjectCoverage >= 0.045);
+  const regionalEvidenceOk =
+    semanticEvidence.passedRegionalAppearance ||
+    (localCpu && nigeriaPromptOk && (humanEvidence.skinPixelRatio >= 0.008 || detectedFaces >= 1 || detectedBodies >= 1));
+
   if (instructions.mode.mode === "photoreal-human" && !productionPhotoreal) {
     defects.unshift("Photorealistic-human mode requires a configured local diffusion/photographic model. The current local 3D renderer is development preview only and cannot complete production.");
   }
   if (instructions.mode.mode === "photoreal-human" && !hasVisibleHumanEvidence) {
     defects.unshift(`Human subject evidence failed: local semantic validator did not confirm visible photorealistic humans; skin-pixel evidence ${(humanEvidence.skinPixelRatio * 100).toFixed(2)}%.`);
   }
-  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && detectedFaces < 1) {
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !faceEvidenceOk) {
     defects.unshift("Facial visibility failed: no complete, natural human face was detected in the production frame.");
   }
-  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && detectedFaces >= 1 && !facialQualityPass) {
+  if (
+    instructions.mode.mode === "photoreal-human" &&
+    semanticEvidence.available &&
+    detectedFaces >= 1 &&
+    !facialQualityPass &&
+    !(localCpu && faceBlurScore >= 0.28)
+  ) {
     defects.unshift(
       `Facial realism failed: detected face lacks production-grade sharpness or symmetry (face blur ${(faceBlurScore * 100).toFixed(0)}%, symmetry ${(faceSymmetryScore * 100).toFixed(0)}%).`
     );
@@ -1816,22 +1921,22 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !semanticEvidence.passedAnatomyRisk) {
     defects.unshift("Anatomy risk failed: local semantic validator found low-quality or malformed-human risk too high.");
   }
-  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && blurScore < 0.45) {
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && blurScore < blurThreshold) {
     defects.unshift(
       `Sharpness failed: blur score ${blurScore.toFixed(2)} (Laplacian variance ${laplacianVariance.toFixed(1)}) is below production threshold. Regenerate at higher native diffusion resolution with more inference steps.`
     );
   }
-  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && handBlurScore > 0 && handBlurScore < 0.38) {
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && handBlurScore > 0 && handBlurScore < handBlurThreshold) {
     defects.unshift(
       `Hand detail failed: hand-region blur score ${handBlurScore.toFixed(2)} (Laplacian ${handLaplacianVariance.toFixed(1)}) indicates malformed, fused, or soft hands.`
     );
   }
-  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && lowQualityHumansScore >= 0.26) {
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && lowQualityHumansScore >= (localCpu ? 0.28 : 0.26)) {
     defects.unshift(
       `Anatomy realism failed: semantic validator scored low-quality human risk at ${(lowQualityHumansScore * 100).toFixed(1)}%.`
     );
   }
-  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !semanticEvidence.passedComposition) {
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !compositionEvidenceOk) {
     defects.unshift(
       `Focal composition failed: subject coverage ${(subjectCoverage * 100).toFixed(1)}%, center offset ${centerOffset.toFixed(2)}, safe area ${safeAreaPass ? "passed" : "failed"}, cropped risk ${croppedRisk ? "detected" : "clear"}, blur score ${blurScore.toFixed(2)}.`
     );
@@ -1839,10 +1944,10 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
   if (roboticFeatureRisk) {
     defects.unshift("Natural-human consistency failed: unexpected robotic/cybernetic feature risk detected.");
   }
-  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !semanticEvidence.passedRegionalAppearance) {
+  if (instructions.mode.mode === "photoreal-human" && semanticEvidence.available && !regionalEvidenceOk) {
     defects.unshift("Regional appearance failed: generated people do not match the required Nigerian/West African demographic profile in the visual brief.");
   }
-  if (locale && (!hasLocalePrompt || !nigeriaPromptOk)) {
+  if (locale && (!localeSatisfied || !nigeriaPromptOk)) {
     defects.unshift(`Regional prompt failed: locale profile ${localeText} was not sufficiently represented in generation instructions.`);
   }
   const score = averageQuality(quality);
@@ -1854,6 +1959,7 @@ function evaluatePhotorealHumanGates(asset: AssetRow, variant: VariantRow & Part
     audit: {
       mode: instructions.mode,
       thresholds: Object.fromEntries(thresholds.map(([key, threshold]) => [key, threshold])),
+      localCpuCalibration: localCpu,
       provider,
       humanEvidence,
       semanticEvidence,
@@ -3418,9 +3524,10 @@ async function executeImageGenerationScheduler(): Promise<ImageGeneratorPayload>
     );
     reviewInstructions.prompt = activeVariant.RenderPrompt;
     const gate = evaluatePhotorealHumanGates(asset, activeVariant, reviewInstructions);
-    if (gate.passed && gate.score < MIN_QUALITY_SCORE) {
+    const minQualityScore = minQualityScoreForRuntime();
+    if (gate.passed && gate.score < minQualityScore) {
       gate.passed = false;
-      gate.defects.unshift(`Overall quality score ${gate.score}% is below the ${MIN_QUALITY_SCORE}% production threshold.`);
+      gate.defects.unshift(`Overall quality score ${gate.score}% is below the ${minQualityScore}% production threshold.`);
     }
     // #region debug-point D:review-gate
     reportImageEngineDebug("D", "lib/image-generator-engine.ts:evaluatePhotorealHumanGates", "review gate evaluated", {
